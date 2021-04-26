@@ -121,7 +121,7 @@ proxy-providers:
   HK:
     type: http
     path: "./proxy_provider/HK.yaml"
-    url: http://192.168.93.2:35500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
+    url: https://clash.navyd.xyz:35500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
     interval: 10800
     health-check:
       enable: true
