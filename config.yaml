@@ -1,0 +1,385 @@
+redir-port: 7892
+port: 7890
+socks-port: 7891
+mixed-port: 7893
+mode: rule
+log-level: warning
+allow-lan: true
+external-controller: 0.0.0.0:9090
+secret: "59090"
+bind-address: "*"
+external-ui: /ui
+interface-name: eth0
+ipv6: false
+tun:
+  enable: true
+  stack: system
+  dns-hijack:
+    - tcp://8.8.8.8:53
+    - tcp://8.8.4.4:53
+dns:
+  enable: true
+  ipv6: false
+  enhanced-mode: fake-ip
+  # enhanced-mode: redir-host
+  fake-ip-range: 198.18.0.1/16
+  listen: 0.0.0.0:53
+  use-hosts: true 
+  # resolve dns nameserver host, should fill pure IP. aka Bootstrap DNS
+  default-nameserver:
+    - 114.114.114.114
+    - 119.29.29.29
+  nameserver:
+    - 114.114.114.114
+    - 119.29.29.29
+    - 223.5.5.5
+  fallback:
+    - https://cloudflare-dns.com/dns-query
+    - tls://1.1.1.1:853
+    - tls://8.8.8.8:853
+  fake-ip-filter:
+    # 本机ip使用 solid explorer解析主机时返回fake-ip无法连接
+    # - raspi4
+    - RASPI4
+    - "*.lan"
+    - time.windows.com
+    - time.nist.gov
+    - time.apple.com
+    - time.asia.apple.com
+    - "*.ntp.org.cn"
+    - "*.openwrt.pool.ntp.org"
+    - time1.cloud.tencent.com
+    - time.ustc.edu.cn
+    - pool.ntp.org
+    - ntp.ubuntu.com
+    - ntp.aliyun.com
+    - ntp1.aliyun.com
+    - ntp2.aliyun.com
+    - ntp3.aliyun.com
+    - ntp4.aliyun.com
+    - ntp5.aliyun.com
+    - ntp6.aliyun.com
+    - ntp7.aliyun.com
+    - time1.aliyun.com
+    - time2.aliyun.com
+    - time3.aliyun.com
+    - time4.aliyun.com
+    - time5.aliyun.com
+    - time6.aliyun.com
+    - time7.aliyun.com
+    - "*.time.edu.cn"
+    - time1.apple.com
+    - time2.apple.com
+    - time3.apple.com
+    - time4.apple.com
+    - time5.apple.com
+    - time6.apple.com
+    - time7.apple.com
+    - time1.google.com
+    - time2.google.com
+    - time3.google.com
+    - time4.google.com
+    - music.163.com
+    - "*.music.163.com"
+    - "*.126.net"
+    - musicapi.taihe.com
+    - music.taihe.com
+    - songsearch.kugou.com
+    - trackercdn.kugou.com
+    - "*.kuwo.cn"
+    - api-jooxtt.sanook.com
+    - api.joox.com
+    - joox.com
+    - y.qq.com
+    - "*.y.qq.com"
+    - streamoc.music.tc.qq.com
+    - mobileoc.music.tc.qq.com
+    - isure.stream.qqmusic.qq.com
+    - dl.stream.qqmusic.qq.com
+    - aqqmusic.tc.qq.com
+    - amobile.music.tc.qq.com
+    - "*.xiami.com"
+    - "*.music.migu.cn"
+    - music.migu.cn
+    - "*.msftconnecttest.com"
+    - "*.msftncsi.com"
+    - localhost.ptlogin2.qq.com
+    - "+.srv.nintendo.net"
+    - "+.stun.playstation.net"
+    - xbox.*.microsoft.com
+    - "+.xboxlive.com"
+    # - proxy.golang.org
+    - stun.*.*
+    - stun.*.*.*
+    - heartbeat.belkin.com
+    - "*.linksys.com"
+    - "*.linksyssmartwifi.com"
+hosts:                            
+   '*.navyd.xyz': 192.168.93.2
+   'raspi4': 192.168.93.2
+proxy-providers:
+  HK:
+    type: http
+    path: "./proxy_provider/HK.yaml"
+    url: http://192.168.93.2:35500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
+    interval: 10800
+    health-check:
+      enable: true
+      url: http://www.gstatic.com/generate_204
+      interval: 300
+
+proxy-groups:
+  - name: Auto-Test
+    type: url-test
+    url: https://cp.cloudflare.com/generate_204
+    interval: 600
+    tolerance: 150
+    use:
+      - HK
+
+  - name: Apple
+    type: select
+    proxies:
+      - DIRECT
+      - Auto-Test
+    use:
+      - HK
+
+  - name: Google
+    type: select
+    proxies:
+      - DIRECT
+      - Auto-Test
+    use:
+      - HK
+
+  - name: Telegram
+    type: select
+    proxies:
+      - Auto-Test
+      - DIRECT
+    use:
+      - HK
+
+  - name: Icloud
+    type: select
+    proxies:
+      - DIRECT
+      - Auto-Test
+    use:
+      - HK
+
+  - name: Streaming
+    type: select
+    proxies:
+      - Auto-Test
+      - DIRECT
+    use:
+      - HK
+
+  # 中国流媒体服务（面向海外版本）
+  # 用于观看部分国内流媒体面向港澳台的地区的限定内容，此处应放港澳台节点，如果没有此需求可删除此处策略组及相关规则
+  # - name: Streaming-SE
+  #   type: select
+  #   proxies:
+  #     - DIRECT
+  #     - Auto-Test
+  #   use:
+  #     - HK
+
+  - name: OneDrive
+    type: select
+    proxies:
+      - DIRECT
+      - Auto-Test
+    use:
+      - HK
+
+  - name: Steam
+    type: select
+    proxies:
+      - DIRECT
+      - Auto-Test
+    use:
+      - HK
+
+  - name: Epic
+    type: select
+    proxies:
+      - DIRECT
+      - Auto-Test
+    use:
+      - HK
+
+  - name: Proxy
+    type: select
+    proxies:
+      - Auto-Test
+      - DIRECT
+    use:
+      - HK
+
+  - name: Google-Search
+    type: select
+    proxies:
+      - Auto-Test
+      - DIRECT
+    use:
+      - HK
+
+  # 白名单模式 Proxy, 黑名单模式 DIRECT, 不知道别动
+  - name: Final-Match
+    type: select
+    proxies:
+      - Auto-Test
+      - DIRECT
+      
+rules:
+  - DOMAIN,clash.razord.top,DIRECT
+  - DOMAIN,yacd.haishan.me,DIRECT
+  - RULE-SET,private,DIRECT
+  - RULE-SET,reject,REJECT
+  - RULE-SET,streaming,Streaming
+  # - RULE-SET,streaming-se,Streaming-SE
+  - RULE-SET,onedrive,OneDrive
+  - RULE-SET,steam,Steam
+  - RULE-SET,icloud,Icloud
+  - RULE-SET,apple,Apple
+  - DOMAIN-KEYWORD,www.google.,Google-Search
+  - RULE-SET,google,Google
+  - DOMAIN-KEYWORD,epic,Epic
+  - RULE-SET,proxy,Proxy
+  - RULE-SET,direct,DIRECT
+  - RULE-SET,telegramcidr,Telegram
+  - GEOIP,,DIRECT
+  - GEOIP,CN,DIRECT
+  - MATCH,Final-Match
+
+rule-providers:
+  reject:
+    type: http
+    behavior: domain
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/reject.txt"
+    path: ./ruleset/reject.yaml
+    interval: 86400
+
+  icloud:
+    type: http
+    behavior: domain
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/icloud.txt"
+    path: ./ruleset/icloud.yaml
+    interval: 86400
+
+  apple:
+    type: http
+    behavior: domain
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/apple.txt"
+    path: ./ruleset/apple.yaml
+    interval: 86400
+
+  google:
+    type: http
+    behavior: domain
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/google.txt"
+    path: ./ruleset/google.yaml
+    interval: 86400
+
+  proxy:
+    type: http
+    behavior: domain
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/proxy.txt"
+    path: ./ruleset/proxy.yaml
+    interval: 86400
+
+  direct:
+    type: http
+    behavior: domain
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/direct.txt"
+    path: ./ruleset/direct.yaml
+    interval: 86400
+
+  private:
+    type: http
+    behavior: domain
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/private.txt"
+    path: ./ruleset/private.yaml
+    interval: 86400
+
+  gfw:
+    type: http
+    behavior: domain
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/gfw.txt"
+    path: ./ruleset/gfw.yaml
+    interval: 86400
+
+  greatfire:
+    type: http
+    behavior: domain
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/greatfire.txt"
+    path: ./ruleset/greatfire.yaml
+    interval: 86400
+
+  tld-not-cn:
+    type: http
+    behavior: domain
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/tld-not-cn.txt"
+    path: ./ruleset/tld-not-cn.yaml
+    interval: 86400
+
+  telegramcidr:
+    type: http
+    behavior: ipcidr
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/telegramcidr.txt"
+    path: ./ruleset/telegramcidr.yaml
+    interval: 86400
+
+  cncidr:
+    type: http
+    behavior: ipcidr
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/cncidr.txt"
+    path: ./ruleset/cncidr.yaml
+    interval: 86400
+
+  lancidr:
+    type: http
+    behavior: ipcidr
+    url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt"
+    path: ./ruleset/lancidr.yaml
+    interval: 86400
+
+# raw.githubusercontent.com
+
+  streaming:
+    type: http
+    behavior: classical
+    path: ./ruleset/streaming.yaml
+    url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/StreamingMedia/Streaming.yaml
+    interval: 86400
+
+  # streaming-se:
+  #   type: http
+  #   behavior: classical
+  #   path: ./ruleset/streaming-se.yaml
+  #   url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/StreamingMedia/StreamingSE.yaml
+  #   interval: 86400
+
+  onedrive:
+    type: http
+    behavior: classical
+    path: ./ruleset/onedrive.yaml
+    url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/Extra/Microsoft/OneDrive.yaml
+    interval: 86400
+
+  steam:
+    type: http
+    behavior: classical
+    path: ./ruleset/steam.yaml
+    url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/Extra/Game/Steam.yaml
+    interval: 86400
+
+  # google-drive:
+  #   type: http
+  #   behavior: classical
+  #   path: ./ruleset/googledrive.yaml
+  #   url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/Extra/Google/GoogleDrive.yaml
+  #   interval: 86400
