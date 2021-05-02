@@ -121,7 +121,8 @@ proxy-providers:
   HK:
     type: http
     path: "./proxy_provider/HK.yaml"
-    url: https://clash.navyd.xyz:35500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
+    # url: https://clash.navyd.xyz:35500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
+    url: http://127.0.0.1:25500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
     interval: 10800
     health-check:
       enable: true
@@ -239,10 +240,13 @@ rules:
   - DOMAIN,yacd.haishan.me,DIRECT
   - RULE-SET,private,DIRECT
   - RULE-SET,reject,REJECT
+
+  # raw.githubusercontent.com
   - RULE-SET,streaming,Streaming
-  # - RULE-SET,streaming-se,Streaming-SE
   - RULE-SET,onedrive,OneDrive
   - RULE-SET,steam,Steam
+  # - RULE-SET,streaming-se,Streaming-SE
+
   - RULE-SET,icloud,Icloud
   - RULE-SET,apple,Apple
   - DOMAIN-KEYWORD,www.google.,Google-Search
@@ -356,13 +360,6 @@ rule-providers:
     url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/StreamingMedia/Streaming.yaml
     interval: 86400
 
-  # streaming-se:
-  #   type: http
-  #   behavior: classical
-  #   path: ./ruleset/streaming-se.yaml
-  #   url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/StreamingMedia/StreamingSE.yaml
-  #   interval: 86400
-
   onedrive:
     type: http
     behavior: classical
@@ -377,9 +374,16 @@ rule-providers:
     url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/Extra/Game/Steam.yaml
     interval: 86400
 
+
   # google-drive:
   #   type: http
   #   behavior: classical
   #   path: ./ruleset/googledrive.yaml
   #   url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/Extra/Google/GoogleDrive.yaml
+  #   interval: 86400
+  # streaming-se:
+  #   type: http
+  #   behavior: classical
+  #   path: ./ruleset/streaming-se.yaml
+  #   url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/StreamingMedia/StreamingSE.yaml
   #   interval: 86400
