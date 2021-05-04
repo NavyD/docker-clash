@@ -170,14 +170,6 @@ proxy-groups:
     use:
       - HK
 
-  - name: Streaming
-    type: select
-    proxies:
-      - Auto-Test
-      - DIRECT
-    use:
-      - HK
-
   # 中国流媒体服务（面向海外版本）
   # 用于观看部分国内流媒体面向港澳台的地区的限定内容，此处应放港澳台节点，如果没有此需求可删除此处策略组及相关规则
   # - name: Streaming-SE
@@ -188,21 +180,27 @@ proxy-groups:
   #   use:
   #     - HK
 
-  - name: OneDrive
-    type: select
-    proxies:
-      - DIRECT
-      - Auto-Test
-    use:
-      - HK
-
-  - name: Steam
-    type: select
-    proxies:
-      - DIRECT
-      - Auto-Test
-    use:
-      - HK
+  # - name: Streaming
+  #   type: select
+  #   proxies:
+  #     - Auto-Test
+  #     - DIRECT
+  #   use:
+  #     - HK
+  # - name: OneDrive
+  #   type: select
+  #   proxies:
+  #     - DIRECT
+  #     - Auto-Test
+  #   use:
+  #     - HK
+  # - name: Steam
+  #   type: select
+  #   proxies:
+  #     - DIRECT
+  #     - Auto-Test
+  #   use:
+  #     - HK
 
   - name: Epic
     type: select
@@ -242,9 +240,9 @@ rules:
   - RULE-SET,reject,REJECT
 
   # raw.githubusercontent.com
-  - RULE-SET,streaming,Streaming
-  - RULE-SET,onedrive,OneDrive
-  - RULE-SET,steam,Steam
+  # - RULE-SET,streaming,Streaming
+  # - RULE-SET,onedrive,OneDrive
+  # - RULE-SET,steam,Steam
   # - RULE-SET,streaming-se,Streaming-SE
 
   - RULE-SET,icloud,Icloud
@@ -353,26 +351,26 @@ rule-providers:
 
 # raw.githubusercontent.com
 
-  streaming:
-    type: http
-    behavior: classical
-    path: ./ruleset/streaming.yaml
-    url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/StreamingMedia/Streaming.yaml
-    interval: 86400
+  # streaming:
+  #   type: http
+  #   behavior: classical
+  #   path: ./ruleset/streaming.yaml
+  #   url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/StreamingMedia/Streaming.yaml
+  #   interval: 86400
 
-  onedrive:
-    type: http
-    behavior: classical
-    path: ./ruleset/onedrive.yaml
-    url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/Extra/Microsoft/OneDrive.yaml
-    interval: 86400
+  # onedrive:
+  #   type: http
+  #   behavior: classical
+  #   path: ./ruleset/onedrive.yaml
+  #   url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/Extra/Microsoft/OneDrive.yaml
+  #   interval: 86400
 
-  steam:
-    type: http
-    behavior: classical
-    path: ./ruleset/steam.yaml
-    url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/Extra/Game/Steam.yaml
-    interval: 86400
+  # steam:
+  #   type: http
+  #   behavior: classical
+  #   path: ./ruleset/steam.yaml
+  #   url: https://raw.githubusercontent.com/DivineEngine/Profiles/master/Clash/RuleSet/Extra/Game/Steam.yaml
+  #   interval: 86400
 
 
   # google-drive:
