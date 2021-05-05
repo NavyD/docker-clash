@@ -114,7 +114,7 @@ dns:
     - heartbeat.belkin.com
     - "*.linksys.com"
     - "*.linksyssmartwifi.com"
-hosts:                            
+hosts: 
    '*.navyd.xyz': 192.168.93.2
    'raspi4': 192.168.93.2
 proxy-providers:
@@ -122,14 +122,36 @@ proxy-providers:
     type: http
     path: "./proxy_provider/HK.yaml"
     # url: https://clash.navyd.xyz:35500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
-    url: http://127.0.0.1:25500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
+    url: http://localhost:25500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
     interval: 10800
     health-check:
       enable: true
       url: http://www.gstatic.com/generate_204
       interval: 300
+  NeteaseMusic:
+    type: http
+    path: ./Proxy/NeteaseMusic.yaml
+    url: https://cdn.jsdelivr.net/gh/DesperadoJ/Rules-for-UnblockNeteaseMusic/Clash/Proxy/NeteaseMusic.yaml
+    interval: 3600
+    health-check:
+      enable: true
+      url: http://www.gstatic.com/generate_204
+      interval: 300
+
+# proxies:
+#   - name: UnblockNeteaseMusic
+#     type: http
+#     server: 127.0.0.1
+#     port: 7011
 
 proxy-groups:
+  - name: Netease-Music
+    type: select
+    # use:
+    #   - NeteaseMusic
+    proxies:
+      - DIRECT
+
   - name: Auto-Test
     type: url-test
     url: https://cp.cloudflare.com/generate_204
@@ -137,7 +159,7 @@ proxy-groups:
     tolerance: 150
     use:
       - HK
-
+      
   - name: Apple
     type: select
     proxies:
@@ -245,6 +267,13 @@ rules:
   # - RULE-SET,steam,Steam
   # - RULE-SET,streaming-se,Streaming-SE
 
+  # Netease Music
+  - DOMAIN,admusicpic.music.126.net,REJECT
+  - DOMAIN,iadmat.nosdn.127.net,REJECT
+  - DOMAIN,iadmusicmat.music.126.net,REJECT
+  - DOMAIN,iadmusicmatvideo.music.126.net,REJECT
+  - RULE-SET,netease-music,Netease-Music
+
   - RULE-SET,icloud,Icloud
   - RULE-SET,apple,Apple
   - DOMAIN-KEYWORD,www.google.,Google-Search
@@ -347,6 +376,13 @@ rule-providers:
     behavior: ipcidr
     url: "https://cdn.jsdelivr.net/gh/Loyalsoldier/clash-rules@release/lancidr.txt"
     path: ./ruleset/lancidr.yaml
+    interval: 86400
+
+  netease-music:
+    type: http
+    behavior: classical
+    path: ./ruleset/NeteaseMusic.yaml
+    url: https://cdn.jsdelivr.net/gh/DesperadoJ/Rules-for-UnblockNeteaseMusic/Clash/RuleSet/NeteaseMusic.yaml
     interval: 86400
 
 # raw.githubusercontent.com
