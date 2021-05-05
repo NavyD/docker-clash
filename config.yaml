@@ -20,8 +20,8 @@ tun:
 dns:
   enable: true
   ipv6: false
-  enhanced-mode: fake-ip
-  # enhanced-mode: redir-host
+  # enhanced-mode: fake-ip
+  enhanced-mode: redir-host
   fake-ip-range: 198.18.0.1/16
   listen: 0.0.0.0:53
   use-hosts: true 
@@ -147,10 +147,10 @@ proxy-providers:
 proxy-groups:
   - name: Netease-Music
     type: select
-    # use:
-    #   - NeteaseMusic
     proxies:
       - DIRECT
+    use:
+      - NeteaseMusic
 
   - name: Auto-Test
     type: url-test
