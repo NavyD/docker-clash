@@ -23,8 +23,8 @@ dns:
   # enhanced-mode: fake-ip
   enhanced-mode: redir-host
   fake-ip-range: 198.18.0.1/16
-  listen: 0.0.0.0:53
-  # use-hosts: true 
+  listen: 0.0.0.0:5353
+  use-hosts: true 
   # resolve dns nameserver host, should fill pure IP. aka Bootstrap DNS
   default-nameserver:
     - 114.114.114.114
@@ -256,17 +256,16 @@ proxy-groups:
       - DIRECT
       
 rules:
+  - DOMAIN,clash.razord.top,DIRECT
+  - DOMAIN,yacd.haishan.me,DIRECT
+  - RULE-SET,private,DIRECT
+  - RULE-SET,reject,REJECT
   # Netease Music
   - DOMAIN,admusicpic.music.126.net,REJECT
   - DOMAIN,iadmat.nosdn.127.net,REJECT
   - DOMAIN,iadmusicmat.music.126.net,REJECT
   - DOMAIN,iadmusicmatvideo.music.126.net,REJECT
   - RULE-SET,netease-music,Netease-Music
-
-  - DOMAIN,clash.razord.top,DIRECT
-  - DOMAIN,yacd.haishan.me,DIRECT
-  - RULE-SET,private,DIRECT
-  - RULE-SET,reject,REJECT
 
   # raw.githubusercontent.com
   # - RULE-SET,streaming,Streaming

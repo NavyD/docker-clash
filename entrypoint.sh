@@ -101,8 +101,11 @@ init_env() {
     fi
 }
 
-# 建立iptables与route table
+# 建立iptables与route table。目前不可用。对于docker容器内部
+# 流量无法转发出来，问题出在CLASH_EXTERNAL中，被mark的流量会路由到
+# utun中，但是无法发出
 setup_tun_redir() {
+    exit 0
     echo 'start seting up tun'
 
     # utun route table
@@ -166,17 +169,6 @@ setup_tun_redir() {
 }
 
 clean() {
-    if [[ -v TUN_ENABLED ]]; then
-        echo "cleaning route rules"
-        # 关闭utun网卡 需要 iproute2依赖 clash会自动创建
-        # ip link set dev "$TUN_NAME" down
-        # ip tuntap del "$TUN_NAME" mode tun
-
-        # delete routing table and fwmark
-        ip route del default dev "$TUN_NAME" table "$TABLE_ID" 2> /dev/null
-        ip rule del fwmark "$MARK_ID" lookup "$TABLE_ID" 2> /dev/null
-    fi
-
     echo "cleaning iptables"
     # delete clash chain
     iptables -t nat -D OUTPUT -j CLASH 2> /dev/null
@@ -197,29 +189,53 @@ clean() {
     iptables -t nat -D PREROUTING -p udp -j CLASH_DNS_EXTERNAL 2> /dev/null
     iptables -t nat -F CLASH_DNS_EXTERNAL 2> /dev/null
     iptables -t nat -X CLASH_DNS_EXTERNAL 2> /dev/null
+
+    iptables -t mangle -D OUTPUT -j CLASH 2> /dev/null
+    iptables -t mangle -F CLASH 2> /dev/null
+    iptables -t mangle -X CLASH 2> /dev/null
+
+    iptables -t mangle -D OUTPUT -j CLASH_EXTERNAL 2> /dev/null
+    iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
+    iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
+
+    iptables -t mangle -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
+    iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
+    iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
+    
+    iptables -t mangle -D PREROUTING -j CLASH_DNS_EXTERNAL 2> /dev/null
+    iptables -t mangle -F CLASH_DNS_EXTERNAL 2> /dev/null
+    iptables -t mangle -X CLASH_DNS_EXTERNAL 2> /dev/null
+
+    # 关闭utun网卡 需要 iproute2依赖 clash会自动创建
+    ip link set dev "$TUN_NAME" down 2> /dev/null
+    ip tuntap del "$TUN_NAME" mode tun 2> /dev/null
+    # delete routing table and fwmark
+    ip route del default dev "$TUN_NAME" table "$TABLE_ID" 2> /dev/null
+    ip rule del fwmark "$MARK_ID" lookup "$TABLE_ID" 2> /dev/null
 }
 
+# 支持重定向到clash dns
 setup_tun_fakeip() {
     echo "setting up tun fake-ip"
+
     if [[ ! -v DNS_PORT ]]; then
         return
     fi
 
     echo "redircting dns to $DNS_PORT"
     iptables -t nat -N CLASH_DNS
+    iptables -t nat -A CLASH_DNS -m owner --uid-owner "$RUNNING_UID" -j RETURN
     iptables -t nat -A CLASH_DNS -p udp --dport 53 -j REDIRECT --to-port "$DNS_PORT"
     iptables -t nat -A CLASH_DNS -p tcp --dport 53 -j REDIRECT --to-port "$DNS_PORT"
-    iptables -t nat -A CLASH_DNS -j RETURN
 
     iptables -t nat -N CLASH_DNS_EXTERNAL
     iptables -t nat -A CLASH_DNS_EXTERNAL -p udp --dport 53 -j REDIRECT --to-port "$DNS_PORT"
     iptables -t nat -A CLASH_DNS_EXTERNAL -p tcp --dport 53 -j REDIRECT --to-port "$DNS_PORT"
-    iptables -t nat -A CLASH_DNS_EXTERNAL -j RETURN
-
+    
     iptables -t nat -I OUTPUT -p tcp -j CLASH_DNS
     iptables -t nat -I OUTPUT -p udp -j CLASH_DNS
-    iptables -t nat -I PREROUTING -p tcp -j CLASH_DNS
-    iptables -t nat -I PREROUTING -p udp -j CLASH_DNS
+    iptables -t nat -I PREROUTING -p tcp -j CLASH_DNS_EXTERNAL
+    iptables -t nat -I PREROUTING -p udp -j CLASH_DNS_EXTERNAL
 }
 
 setup_redir() {
@@ -240,7 +256,7 @@ setup_redir() {
     iptables -t nat -A CLASH -d 10.0.0.0/8 -j RETURN
     # 过滤本机clash流量 避免循环 user无法使用代理
     iptables -t nat -A CLASH -m owner --uid-owner "$RUNNING_UID" -j RETURN
-    iptables -t nat -A CLASH -p tcp -j REDIRECT --to-ports "$REDIR_PORT"
+    iptables -t nat -A CLASH -p tcp -j REDIRECT --to-port "$REDIR_PORT"
     iptables -t nat -I OUTPUT -j CLASH
 
     # # 接管主机转发流量
@@ -255,7 +271,7 @@ setup_redir() {
     iptables -t nat -A CLASH_EXTERNAL -d 240.0.0.0/4 -j RETURN
     iptables -t nat -A CLASH_EXTERNAL -d 172.16.0.0/12 -j RETURN
 
-    iptables -t nat -A CLASH_EXTERNAL -p tcp -j REDIRECT --to-ports "$REDIR_PORT"
+    iptables -t nat -A CLASH_EXTERNAL -p tcp -j REDIRECT --to-port "$REDIR_PORT"
     iptables -t nat -I PREROUTING -j CLASH_EXTERNAL
 
     # dns
@@ -303,10 +319,10 @@ start_clash() {
 }
 
 main() {
-    if [[ -v DIRECT ]]; then
+    if [[ ! -v ENABLED ]]; then
         echo "direct starting clash"
-        clean
-        /clash
+        /clash &
+        wait $!
         exit 0
     fi
 
