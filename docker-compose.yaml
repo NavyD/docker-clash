@@ -2,10 +2,12 @@ version: "3"
 
 services:
   clash-premium-ui:
-    image: clash-premium-ui
+    image: navyd/clash-premium-ui:latest
     container_name: clash
     network_mode: host
-    restart: always
+    # restart: always
+    # environment: 
+      # - DIRECT=true
     # 使用clash-premium的docker镜像无法创建tun: https://github.com/Dreamacro/clash/issues/736
     cap_add: 
       - NET_ADMIN

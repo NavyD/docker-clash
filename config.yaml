@@ -9,10 +9,10 @@ external-controller: 0.0.0.0:9090
 secret: "59090"
 bind-address: "*"
 external-ui: /ui
-interface-name: eth0
+# interface-name: eth0
 ipv6: false
 tun:
-  enable: true
+  enable: false
   stack: system
   dns-hijack:
     - tcp://8.8.8.8:53
@@ -24,7 +24,7 @@ dns:
   enhanced-mode: redir-host
   fake-ip-range: 198.18.0.1/16
   listen: 0.0.0.0:53
-  use-hosts: true 
+  # use-hosts: true 
   # resolve dns nameserver host, should fill pure IP. aka Bootstrap DNS
   default-nameserver:
     - 114.114.114.114
@@ -122,7 +122,7 @@ proxy-providers:
     type: http
     path: "./proxy_provider/HK.yaml"
     # url: https://clash.navyd.xyz:35500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
-    url: http://localhost:25500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
+    url: http://192.168.93.2:25500/sub?target=clash&url=https%3A//www.jinkela.site/link/xfTBMK0hw35XcYyy%3Fsub%3D3&list=true&include=%28%3F%3D.%2A%E9%A6%99%E6%B8%AF%29%28%3F%3D.%2A1.5x%29
     interval: 10800
     health-check:
       enable: true
@@ -256,6 +256,13 @@ proxy-groups:
       - DIRECT
       
 rules:
+  # Netease Music
+  - DOMAIN,admusicpic.music.126.net,REJECT
+  - DOMAIN,iadmat.nosdn.127.net,REJECT
+  - DOMAIN,iadmusicmat.music.126.net,REJECT
+  - DOMAIN,iadmusicmatvideo.music.126.net,REJECT
+  - RULE-SET,netease-music,Netease-Music
+
   - DOMAIN,clash.razord.top,DIRECT
   - DOMAIN,yacd.haishan.me,DIRECT
   - RULE-SET,private,DIRECT
@@ -266,13 +273,6 @@ rules:
   # - RULE-SET,onedrive,OneDrive
   # - RULE-SET,steam,Steam
   # - RULE-SET,streaming-se,Streaming-SE
-
-  # Netease Music
-  - DOMAIN,admusicpic.music.126.net,REJECT
-  - DOMAIN,iadmat.nosdn.127.net,REJECT
-  - DOMAIN,iadmusicmat.music.126.net,REJECT
-  - DOMAIN,iadmusicmatvideo.music.126.net,REJECT
-  - RULE-SET,netease-music,Netease-Music
 
   - RULE-SET,icloud,Icloud
   - RULE-SET,apple,Apple

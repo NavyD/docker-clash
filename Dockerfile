@@ -1,5 +1,7 @@
 FROM dreamacro/clash-premium:latest
 
+LABEL maintainer ="dhjnavyd@gmail.com"
+
 RUN wget -O yacd.zip 'https://github.com/haishanh/yacd/archive/gh-pages.zip' \
     && mkdir /ui \
     && unzip yacd.zip -d /ui \
