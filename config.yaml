@@ -12,16 +12,17 @@ external-ui: /ui
 # interface-name: eth0
 ipv6: false
 tun:
-  enable: false
+  enable: true
   stack: system
+  # stack: gvisor
   dns-hijack:
     - tcp://8.8.8.8:53
     - tcp://8.8.4.4:53
 dns:
   enable: true
   ipv6: false
-  # enhanced-mode: fake-ip
-  enhanced-mode: redir-host
+  enhanced-mode: fake-ip
+  # enhanced-mode: redir-host
   fake-ip-range: 198.18.0.1/16
   listen: 0.0.0.0:5353
   use-hosts: true 
@@ -29,6 +30,7 @@ dns:
   default-nameserver:
     - 114.114.114.114
     - 119.29.29.29
+    - 223.5.5.5
   nameserver:
     - 114.114.114.114
     - 119.29.29.29

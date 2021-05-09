@@ -105,17 +105,10 @@ init_env() {
 # 流量无法转发出来，问题出在CLASH_EXTERNAL中，被mark的流量会路由到
 # utun中，但是无法发出
 setup_tun_redir() {
-    exit 0
     echo 'start seting up tun'
-
-    # utun route table
-    ip route replace default dev "$TUN_NAME" table "$TABLE_ID"
-    ip rule add fwmark "$MARK_ID" lookup "$TABLE_ID"
-
     ## 接管clash宿主机内部流量
-    if ! iptables -t mangle -N CLASH; then
-        iptables -t mangle -F CLASH
-    fi
+    iptables -t mangle -N CLASH
+    iptables -t mangle -F CLASH
     # dns
     iptables -t mangle -A CLASH -p tcp --dport 53 -j MARK --set-mark $MARK_ID
     iptables -t mangle -A CLASH -p udp --dport 53 -j MARK --set-mark $MARK_ID
@@ -135,10 +128,9 @@ setup_tun_redir() {
     iptables -t mangle -A CLASH -j MARK --set-mark $MARK_ID
     iptables -t mangle -I OUTPUT -j CLASH
 
-    ## 接管主机转发流量
-    if ! iptables -t mangle -N CLASH_EXTERNAL; then
-        iptables -t mangle -F CLASH_EXTERNAL
-    fi
+    ## 接管转发流量
+    iptables -t mangle -N CLASH_EXTERNAL
+    iptables -t mangle -F CLASH_EXTERNAL
     # private
     iptables -t mangle -A CLASH_EXTERNAL -d 127.0.0.0/8 -j RETURN
     iptables -t mangle -A CLASH_EXTERNAL -d 10.0.0.0/8 -j RETURN
@@ -159,13 +151,24 @@ setup_tun_redir() {
         iptables -t nat -A CLASH_DNS -p tcp --dport 53 -j REDIRECT --to-port "$DNS_PORT"
         iptables -t nat -A CLASH_DNS -j RETURN
 
-        # iptables -t nat -I OUTPUT -p udp --dport 53 -j CLASH_DNS
-        # iptables -t nat -I OUTPUT -p tcp --dport 53 -j CLASH_DNS
-        iptables -t nat -I OUTPUT -j CLASH_DNS
-        # iptables -t nat -I PREROUTING -p udp --dport 53 -j CLASH_DNS
-        # iptables -t nat -I PREROUTING -p tcp --dport 53 -j CLASH_DNS
-        iptables -t nat -I PREROUTING -j CLASH_DNS
+        iptables -t nat -I OUTPUT -p tcp -j CLASH_DNS
+        iptables -t nat -I OUTPUT -p udp -j CLASH_DNS
+
+        iptables -t nat -N CLASH_DNS_EXTERNAL
+        iptables -t nat -F CLASH_DNS_EXTERNAL
+        iptables -t nat -A CLASH_DNS_EXTERNAL -p udp --dport 53 -j REDIRECT --to-port "$DNS_PORT"
+        iptables -t nat -A CLASH_DNS_EXTERNAL -p tcp --dport 53 -j REDIRECT --to-port "$DNS_PORT"
+        iptables -t nat -A CLASH_DNS_EXTERNAL -p tcp -d 8.8.8.8 -j REDIRECT --to-port "$DNS_PORT"
+        iptables -t nat -A CLASH_DNS_EXTERNAL -p tcp -d 8.8.4.4 -j REDIRECT --to-port "$DNS_PORT"
+        iptables -t nat -A CLASH_DNS_EXTERNAL -j RETURN
+
+        iptables -t nat -I PREROUTING -p tcp -j CLASH_DNS_EXTERNAL
+        iptables -t nat -I PREROUTING -p udp -j CLASH_DNS_EXTERNAL
     fi
+
+        # utun route table
+    ip route replace default dev "$TUN_NAME" table "$TABLE_ID"
+    ip rule add fwmark "$MARK_ID" lookup "$TABLE_ID"
 }
 
 clean() {
@@ -332,6 +335,8 @@ main() {
     # redir-host with tun    
     if [[ -v TUN_ENABLED && -v DNS_REDIR_ENABLED ]]; then
         echo "setting up tun redir with REDIR_PORT=$REDIR_PORT. unsupported redir-host with tun"
+        # start_clash
+        # setup_tun_redir
         exit 0
     # fake-ip with tun
     elif [[ -v TUN_ENABLED && ! -v DNS_REDIR_ENABLED ]]; then
