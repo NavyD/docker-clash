@@ -1,4 +1,4 @@
-FROM dreamacro/clash-premium:latest
+FROM dreamacro/clash-premium:2021.05.08
 
 LABEL maintainer ="dhjnavyd@gmail.com"
 

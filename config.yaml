@@ -21,8 +21,8 @@ tun:
 dns:
   enable: true
   ipv6: false
-  enhanced-mode: fake-ip
-  # enhanced-mode: redir-host
+  # enhanced-mode: fake-ip
+  enhanced-mode: redir-host
   fake-ip-range: 198.18.0.1/16
   listen: 0.0.0.0:5353
   use-hosts: true 
@@ -41,7 +41,7 @@ dns:
     - tls://8.8.8.8:853
   fake-ip-filter:
     # 本机ip使用 solid explorer解析主机时返回fake-ip无法连接
-    # - raspi4
+    - raspi4
     - RASPI4
     - "*.lan"
     - time.windows.com
@@ -118,7 +118,7 @@ dns:
     - "*.linksyssmartwifi.com"
 hosts: 
    '*.navyd.xyz': 192.168.93.2
-   'raspi4': 192.168.93.2
+   raspi4: 192.168.93.2
 proxy-providers:
   HK:
     type: http

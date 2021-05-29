@@ -45,21 +45,26 @@ init_env() {
     fi
     
     local context=$(parse_yaml $CONFIG_PATH)
-    # dns port
-    if [[ ! -v DNS_PORT ]]; then
-        DNS_PORT=$(grep -E '^dns_listen' <<< "$context" | sed 's/"//g' | awk -F: '{print $2}')
-        if [ -z "$DNS_PORT" ] || ((DNS_PORT >= 65535 || DNS_PORT <= 0)); then
-            echo "found invalid DNS_PORT=$DNS_PORT from $CONFIG_PATH"
-            exit 127
+
+    if [[ -v DNS_PORT_REDIR_ENABLED ]]; then
+        # dns port
+        if [[ ! -v DNS_PORT ]]; then
+            DNS_PORT=$(grep -E '^dns_listen' <<< "$context" | sed 's/"//g' | awk -F: '{print $2}')
+            if [ -z "$DNS_PORT" ] || ((DNS_PORT >= 65535 || DNS_PORT <= 0)); then
+                echo "found invalid DNS_PORT=$DNS_PORT from $CONFIG_PATH"
+                exit 127
+            fi
+            echo "found DNS_PORT=$DNS_PORT from $CONFIG_PATH"
         fi
-        echo "found DNS_PORT=$DNS_PORT from $CONFIG_PATH"
-    fi
-    # 53不需要重定向
-    if ((DNS_PORT == 53)); then
-        echo "unset DNS_PORT=53"
+        # 53不需要重定向
+        if ((DNS_PORT == 53)); then
+            echo "unset DNS_PORT=53"
+            unset DNS_PORT
+        fi
+    else
+        echo "found disable dns port redir"
         unset DNS_PORT
     fi
-
     # tun
     if [[ ! -v TUN_ENABLED ]]; then
         if grep -E '^tun_enable="true"' <<< "$context" > /dev/null; then
@@ -109,70 +114,55 @@ setup_tun_redir() {
     ## 接管clash宿主机内部流量
     iptables -t mangle -N CLASH
     iptables -t mangle -F CLASH
-    # dns
-    iptables -t mangle -A CLASH -p tcp --dport 53 -j MARK --set-mark $MARK_ID
-    iptables -t mangle -A CLASH -p udp --dport 53 -j MARK --set-mark $MARK_ID
-    iptables -t mangle -A CLASH -m addrtype --dst-type BROADCAST -j RETURN
     # private
     iptables -t mangle -A CLASH -d 0.0.0.0/8 -j RETURN
     iptables -t mangle -A CLASH -d 127.0.0.0/8 -j RETURN
     iptables -t mangle -A CLASH -d 224.0.0.0/4 -j RETURN
     iptables -t mangle -A CLASH -d 172.16.0.0/12 -j RETURN
-    iptables -t mangle -A CLASH -d 127.0.0.0/8 -j RETURN
     iptables -t mangle -A CLASH -d 169.254.0.0/16 -j RETURN
     iptables -t mangle -A CLASH -d 240.0.0.0/4 -j RETURN
     iptables -t mangle -A CLASH -d 192.168.0.0/16 -j RETURN
     iptables -t mangle -A CLASH -d 10.0.0.0/8 -j RETURN
+    # docker internal 
+    iptables -t mangle -A CLASH -s 172.16.0.0/12 -j RETURN
     # mark
-    iptables -t mangle -A CLASH -d 198.18.0.0/16 -j MARK --set-mark $MARK_ID
-    iptables -t mangle -A CLASH -j MARK --set-mark $MARK_ID
-    iptables -t mangle -I OUTPUT -j CLASH
+    iptables -t mangle -A CLASH -j MARK --set-xmark $MARK_ID
+
+    # 注意顺序 owner过滤 要在 CLASH之前
+    iptables -t mangle -A OUTPUT -m owner --uid-owner $RUNNING_UID -j RETURN
+    iptables -t mangle -A OUTPUT -j CLASH
 
     ## 接管转发流量
     iptables -t mangle -N CLASH_EXTERNAL
     iptables -t mangle -F CLASH_EXTERNAL
     # private
+    iptables -t mangle -A CLASH_EXTERNAL -d 0.0.0.0/8 -j RETURN
     iptables -t mangle -A CLASH_EXTERNAL -d 127.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 10.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 169.254.0.0/16 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 192.168.0.0/16 -j RETURN
     iptables -t mangle -A CLASH_EXTERNAL -d 224.0.0.0/4 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 240.0.0.0/4 -j RETURN
     iptables -t mangle -A CLASH_EXTERNAL -d 172.16.0.0/12 -j RETURN
+    iptables -t mangle -A CLASH_EXTERNAL -d 169.254.0.0/16 -j RETURN
+    iptables -t mangle -A CLASH_EXTERNAL -d 240.0.0.0/4 -j RETURN
+    iptables -t mangle -A CLASH_EXTERNAL -d 192.168.0.0/16 -j RETURN
+    iptables -t mangle -A CLASH_EXTERNAL -d 10.0.0.0/8 -j RETURN
+    # docker internal 
+    iptables -t mangle -A CLASH_EXTERNAL -s 172.16.0.0/12 -j RETURN
     # mark
-    iptables -t mangle -A CLASH_EXTERNAL -j MARK --set-mark $MARK_ID
-    iptables -t mangle -I PREROUTING -j CLASH_EXTERNAL
+    iptables -t mangle -A CLASH_EXTERNAL -j MARK --set-xmark $MARK_ID
 
-    if [[ -v DNS_PORT ]]; then
-        echo "redircting dns to $DNS_PORT"
-        iptables -t nat -N CLASH_DNS
-        iptables -t nat -F CLASH_DNS
-        iptables -t nat -A CLASH_DNS -p udp --dport 53 -j REDIRECT --to-port "$DNS_PORT"
-        iptables -t nat -A CLASH_DNS -p tcp --dport 53 -j REDIRECT --to-port "$DNS_PORT"
-        iptables -t nat -A CLASH_DNS -j RETURN
+    iptables -t mangle -A PREROUTING -j CLASH_EXTERNAL
 
-        iptables -t nat -I OUTPUT -p tcp -j CLASH_DNS
-        iptables -t nat -I OUTPUT -p udp -j CLASH_DNS
-
-        iptables -t nat -N CLASH_DNS_EXTERNAL
-        iptables -t nat -F CLASH_DNS_EXTERNAL
-        iptables -t nat -A CLASH_DNS_EXTERNAL -p udp --dport 53 -j REDIRECT --to-port "$DNS_PORT"
-        iptables -t nat -A CLASH_DNS_EXTERNAL -p tcp --dport 53 -j REDIRECT --to-port "$DNS_PORT"
-        iptables -t nat -A CLASH_DNS_EXTERNAL -p tcp -d 8.8.8.8 -j REDIRECT --to-port "$DNS_PORT"
-        iptables -t nat -A CLASH_DNS_EXTERNAL -p tcp -d 8.8.4.4 -j REDIRECT --to-port "$DNS_PORT"
-        iptables -t nat -A CLASH_DNS_EXTERNAL -j RETURN
-
-        iptables -t nat -I PREROUTING -p tcp -j CLASH_DNS_EXTERNAL
-        iptables -t nat -I PREROUTING -p udp -j CLASH_DNS_EXTERNAL
-    fi
-
-        # utun route table
+    # utun route table
     ip route replace default dev "$TUN_NAME" table "$TABLE_ID"
     ip rule add fwmark "$MARK_ID" lookup "$TABLE_ID"
 }
 
 clean() {
     echo "cleaning iptables"
+
+    # delete routing table and fwmark
+    ip route del default dev "$TUN_NAME" table "$TABLE_ID" 2> /dev/null
+    ip rule del fwmark "$MARK_ID" lookup "$TABLE_ID" 2> /dev/null
+
     # delete clash chain
     iptables -t nat -D OUTPUT -j CLASH 2> /dev/null
     iptables -t nat -F CLASH 2> /dev/null
@@ -197,6 +187,8 @@ clean() {
     iptables -t mangle -F CLASH 2> /dev/null
     iptables -t mangle -X CLASH 2> /dev/null
 
+    iptables -t mangle -D OUTPUT -m owner --uid-owner $RUNNING_UID -j RETURN 2> /dev/null
+
     iptables -t mangle -D OUTPUT -j CLASH_EXTERNAL 2> /dev/null
     iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
     iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
@@ -208,13 +200,6 @@ clean() {
     iptables -t mangle -D PREROUTING -j CLASH_DNS_EXTERNAL 2> /dev/null
     iptables -t mangle -F CLASH_DNS_EXTERNAL 2> /dev/null
     iptables -t mangle -X CLASH_DNS_EXTERNAL 2> /dev/null
-
-    # 关闭utun网卡 需要 iproute2依赖 clash会自动创建
-    ip link set dev "$TUN_NAME" down 2> /dev/null
-    ip tuntap del "$TUN_NAME" mode tun 2> /dev/null
-    # delete routing table and fwmark
-    ip route del default dev "$TUN_NAME" table "$TABLE_ID" 2> /dev/null
-    ip rule del fwmark "$MARK_ID" lookup "$TABLE_ID" 2> /dev/null
 }
 
 # 支持重定向到clash dns
@@ -304,6 +289,7 @@ setup_redir() {
     iptables -t nat -I PREROUTING -p udp -j CLASH_DNS_EXTERNAL
 }
 
+# 在clash正常启动后返回。从clash输出中判断dns或restful api监听启动
 start_clash() {
     echo 'starting clash'
     touch temp.log
@@ -313,8 +299,8 @@ start_clash() {
     tail -f temp.log | while read -r line
     do 
         echo "$line"
-        if echo "$line" | grep "$DNS_PORT" &> /dev/null; then
-            echo "clash has started"
+        if echo "$line" | grep "listening at" &> /dev/null; then
+            echo "clash has started on line: $line"
             killall tail
             break
         fi
@@ -334,10 +320,8 @@ main() {
 
     # redir-host with tun    
     if [[ -v TUN_ENABLED && -v DNS_REDIR_ENABLED ]]; then
-        echo "setting up tun redir with REDIR_PORT=$REDIR_PORT. unsupported redir-host with tun"
-        # start_clash
-        # setup_tun_redir
-        exit 0
+        start_clash
+        setup_tun_redir
     # fake-ip with tun
     elif [[ -v TUN_ENABLED && ! -v DNS_REDIR_ENABLED ]]; then
         start_clash
