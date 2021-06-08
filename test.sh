@@ -1,204 +1,123 @@
-#!/usr/bin/bash
+#!/bin/bash
 
-setup_tun_redir22() {
-    echo 'start seting up tun'
-    iptables -t mangle -N CLASH # 创建 Clash Chain
-    # 排除一些局域网地址
-    iptables -t mangle -A CLASH -d 0.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH -d 10.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH -d 127.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH -d 169.254.0.0/16 -j RETURN
-    iptables -t mangle -A CLASH -d 172.16.0.0/12 -j RETURN
-    iptables -t mangle -A CLASH -d 192.168.0.0/16 -j RETURN
-    iptables -t mangle -A CLASH -d 224.0.0.0/4 -j RETURN
-    iptables -t mangle -A CLASH -d 240.0.0.0/4 -j RETURN
-    # iptables -t mangle -A CLASH -m set --match-set chnroute dst -j RETURN
-    iptables -t mangle -A CLASH -j MARK --set-xmark $MARK_ID
+# 参考：https://help.atmail.com/hc/en-us/articles/201566464-Throttling-Bandwidth-using-Traffic-Controller-for-Linux
+# https://blog.csdn.net/zhongbeida_xue/article/details/54613750
+# https://cloud.tencent.com/developer/article/1409664
+# https://serverfault.com/questions/191560/how-can-i-do-traffic-shaping-in-linux-by-ip
+#
+#  tc uses the following units when passed as a parameter.
+#  kbps: Kilobytes per second
+#  mbps: Megabytes per second
+#  kbit: Kilobits per second
+#  mbit: Megabits per second
+#  bps: Bytes per second
+#       Amounts of data can be specified in:
+#       kb or k: Kilobytes
+#       mb or m: Megabytes
+#       mbit: Megabits
+#       kbit: Kilobits
+#  To get the byte figure from bits, divide the number by 8 bit
+#
 
-    iptables -t mangle -A PREROUTING -j CLASH
+#
+# Name of the traffic control command.
+TC=/sbin/tc
 
-    iptables -t mangle -A OUTPUT -m owner --uid-owner $USER_ID -j RETURN
-    # 如果本机有某些不想被代理的应用(如BT)，可以将其运行在特定用户下，加以屏蔽
-    # iptables -t mangle -A OUTPUT -m owner --uid-owner xxx -j RETURN
-    iptables -t mangle -A OUTPUT -j CLASH
+# The network interface we're planning on limiting bandwidth.
+IF=eth0             # Interface
 
-    # utun route table
-    ip route replace default dev "$TUN_NAME" table "$TABLE_ID"
-    ip rule add fwmark "$MARK_ID" lookup "$TABLE_ID"
+# Download limit (in mega bits)
+DNLD=14mbit          # DOWNLOAD Limit
+
+# Upload limit (in mega bits)
+UPLD=14mbit          # UPLOAD Limit
+
+# IP address of the machine we are controlling
+IP=192.168.93.199     # Host IP
+
+# Filter options for limiting the intended interface.
+U32="$TC filter add dev $IF protocol ip parent 1:0 prio 1 u32"
+
+start() {
+
+# We'll use Hierarchical Token Bucket (HTB) to shape bandwidth.
+# For detailed configuration options, please consult Linux man
+# page.
+
+$TC qdisc add dev $IF root handle 1: htb default 30
+$TC class add dev $IF parent 1: classid 1:1 htb rate $DNLD
+$TC class add dev $IF parent 1: classid 1:2 htb rate $UPLD
+$U32 match ip dst $IP/32 flowid 1:1
+$U32 match ip src $IP/32 flowid 1:2
+
+# The first line creates the root qdisc, and the next two lines
+# create two child qdisc that are to be used to shape download
+# and upload bandwidth.
+#
+# The 4th and 5th line creates the filter to match the interface.
+# The 'dst' IP address is used to limit download speed, and the
+# 'src' IP address is used to limit upload speed.
+
 }
 
-setup_tun_redir() {
-    echo 'start seting up tun'
-    ## 接管clash宿主机内部流量
-    iptables -t mangle -N CLASH
-    iptables -t mangle -F CLASH
-    # private
-    # docker internal 
-    iptables -t mangle -A CLASH -s 172.16.0.0/12 -j RETURN
-    iptables -t mangle -A CLASH -d 0.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH -d 127.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH -d 224.0.0.0/4 -j RETURN
-    iptables -t mangle -A CLASH -d 172.16.0.0/12 -j RETURN
-    iptables -t mangle -A CLASH -d 169.254.0.0/16 -j RETURN
-    iptables -t mangle -A CLASH -d 240.0.0.0/4 -j RETURN
-    iptables -t mangle -A CLASH -d 192.168.0.0/16 -j RETURN
-    iptables -t mangle -A CLASH -d 10.0.0.0/8 -j RETURN
-    # mark
-    iptables -t mangle -A CLASH -j MARK --set-xmark $MARK_ID
+stop() {
 
-    iptables -t mangle -A OUTPUT -m owner --uid-owner $USER_ID -j RETURN
-    iptables -t mangle -A OUTPUT -j CLASH
+# Stop the bandwidth shaping.
+$TC qdisc del dev $IF root
 
-    ## 接管转发流量
-    iptables -t mangle -N CLASH_EXTERNAL
-    iptables -t mangle -F CLASH_EXTERNAL
-    # private
-    # docker internal 
-    iptables -t mangle -A CLASH_EXTERNAL -s 172.16.0.0/12 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 0.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 127.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 224.0.0.0/4 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 172.16.0.0/12 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 169.254.0.0/16 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 240.0.0.0/4 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 192.168.0.0/16 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 10.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -j MARK --set-xmark $MARK_ID
-    # mark
-    iptables -t mangle -A PREROUTING -j CLASH_EXTERNAL
-
-    # utun route table
-    ip route replace default dev "$TUN_NAME" table "$TABLE_ID"
-    ip rule add fwmark "$MARK_ID" lookup "$TABLE_ID"
 }
 
-clean22() {
-    echo "cleaning iptables"
-    # delete clash chain
-    iptables -t nat -D OUTPUT -j CLASH 2> /dev/null
-    iptables -t nat -F CLASH 2> /dev/null
-    iptables -t nat -X CLASH 2> /dev/null
+restart() {
 
-    iptables -t nat -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
-    iptables -t nat -F CLASH_EXTERNAL 2> /dev/null
-    iptables -t nat -X CLASH_EXTERNAL 2> /dev/null
+# Self-explanatory.
+stop
+sleep 1
+start
 
-    # dns
-    iptables -t nat -D OUTPUT -p tcp -j CLASH_DNS 2> /dev/null
-    iptables -t nat -D OUTPUT -p udp -j CLASH_DNS 2> /dev/null
-    iptables -t nat -F CLASH_DNS 2> /dev/null
-    iptables -t nat -X CLASH_DNS 2> /dev/null
-
-    iptables -t nat -D PREROUTING -p tcp -j CLASH_DNS_EXTERNAL 2> /dev/null
-    iptables -t nat -D PREROUTING -p udp -j CLASH_DNS_EXTERNAL 2> /dev/null
-    iptables -t nat -F CLASH_DNS_EXTERNAL 2> /dev/null
-    iptables -t nat -X CLASH_DNS_EXTERNAL 2> /dev/null
-
-    iptables -t mangle -D OUTPUT -j CLASH 2> /dev/null
-    iptables -t mangle -F CLASH 2> /dev/null
-    iptables -t mangle -X CLASH 2> /dev/null
-
-    iptables -t mangle -D OUTPUT -j CLASH_EXTERNAL 2> /dev/null
-    iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
-    iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
-
-    iptables -t mangle -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
-    iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
-    iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
-    
-    iptables -t mangle -D PREROUTING -j CLASH_DNS_EXTERNAL 2> /dev/null
-    iptables -t mangle -F CLASH_DNS_EXTERNAL 2> /dev/null
-    iptables -t mangle -X CLASH_DNS_EXTERNAL 2> /dev/null
-
-    # 关闭utun网卡 需要 iproute2依赖 clash会自动创建
-    # ip link set dev "$TUN_NAME" down 2> /dev/null
-    # ip tuntap del "$TUN_NAME" mode tun 2> /dev/null
-    # delete routing table and fwmark
-    ip route del default dev "$TUN_NAME" table "$TABLE_ID" 2> /dev/null
-    ip rule del fwmark "$MARK_ID" lookup "$TABLE_ID" 2> /dev/null
-
-    iptables -t mangle -D PREROUTING -j CLASH 2> /dev/null
-    iptables -t mangle -D OUTPUT -j CLASH 2> /dev/null
-    iptables -t mangle -D OUTPUT -m owner --uid-owner $USER_ID -j RETURN 2> /dev/null
-    iptables -t mangle -F CLASH 2> /dev/null
-    iptables -t mangle -X CLASH 2> /dev/null
 }
 
-clean() {
-    echo "cleaning iptables"
-    # delete clash chain
-    iptables -t nat -D OUTPUT -j CLASH 2> /dev/null
-    iptables -t nat -F CLASH 2> /dev/null
-    iptables -t nat -X CLASH 2> /dev/null
+show() {
 
-    iptables -t nat -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
-    iptables -t nat -F CLASH_EXTERNAL 2> /dev/null
-    iptables -t nat -X CLASH_EXTERNAL 2> /dev/null
+# Display status of traffic control status.
+$TC -s qdisc ls dev $IF
 
-    # dns
-    iptables -t nat -D OUTPUT -p tcp -j CLASH_DNS 2> /dev/null
-    iptables -t nat -D OUTPUT -p udp -j CLASH_DNS 2> /dev/null
-    iptables -t nat -F CLASH_DNS 2> /dev/null
-    iptables -t nat -X CLASH_DNS 2> /dev/null
-
-    iptables -t nat -D PREROUTING -p tcp -j CLASH_DNS_EXTERNAL 2> /dev/null
-    iptables -t nat -D PREROUTING -p udp -j CLASH_DNS_EXTERNAL 2> /dev/null
-    iptables -t nat -F CLASH_DNS_EXTERNAL 2> /dev/null
-    iptables -t nat -X CLASH_DNS_EXTERNAL 2> /dev/null
-
-    iptables -t mangle -D OUTPUT -j CLASH 2> /dev/null
-    iptables -t mangle -F CLASH 2> /dev/null
-    iptables -t mangle -X CLASH 2> /dev/null
-
-    iptables -t mangle -D OUTPUT -m owner --uid-owner $USER_ID -j RETURN 2> /dev/null
-
-    iptables -t mangle -D OUTPUT -j CLASH_EXTERNAL 2> /dev/null
-    iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
-    iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
-
-    iptables -t mangle -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
-    iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
-    iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
-    
-    iptables -t mangle -D PREROUTING -j CLASH_DNS_EXTERNAL 2> /dev/null
-    iptables -t mangle -F CLASH_DNS_EXTERNAL 2> /dev/null
-    iptables -t mangle -X CLASH_DNS_EXTERNAL 2> /dev/null
-
-    # 关闭utun网卡 需要 iproute2依赖 clash会自动创建
-    # ip link set dev "$TUN_NAME" down 2> /dev/null
-    # ip tuntap del "$TUN_NAME" mode tun 2> /dev/null
-    # delete routing table and fwmark
-    ip route del default dev "$TUN_NAME" table "$TABLE_ID" 2> /dev/null
-    ip rule del fwmark "$MARK_ID" lookup "$TABLE_ID" 2> /dev/null
 }
 
+case "$1" in
 
-DNS_PORT="5353"
-TUN_NAME="utun"
-TABLE_ID="0x162"
-MARK_ID="0x162"
-USER_ID="0"
-clean
-#setup_tun_redir
+start)
 
-echo 'monitoring with curl google'
-loop_count=0
-interval=1
+echo -n "Starting bandwidth shaping: "
+start
+echo "done"
+;;
 
-while true
-do
-    ((loop_count = loop_count + 1))
-    if ! curl -sSLf --max-time 2 https://www.google.com > /dev/null; then
-        echo "sleep $interval in $loop_count"
-        sleep $interval
-    else 
-        echo "successful in $loop_count"
-        break
-    fi
+stop)
 
-    if ((loop_count >= 2)); then
-        echo 'multi failed cleaning'
-        clean
-        break
-    fi
-done
+echo -n "Stopping bandwidth shaping: "
+stop
+echo "done"
+;;
+
+restart)
+
+echo -n "Restarting bandwidth shaping: "
+restart
+echo "done"
+;;
+
+show)
+
+echo "Bandwidth shaping status for $IF:"
+show
+echo ""
+;;
+
+*)
+
+pwd=$(pwd)
+echo "Usage: tc.bash {start|stop|restart|show}"
+;;
+
+esac 
+exit 0

@@ -8,7 +8,6 @@ services:
     restart: always
     environment: 
       - ENABLED=true
-      - DNS_PORT_REDIR_ENABLED=true
     # 使用clash-premium的docker镜像无法创建tun: https://github.com/Dreamacro/clash/issues/736
     cap_add: 
       - NET_ADMIN
