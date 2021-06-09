@@ -23,13 +23,14 @@ function parse_yaml {
 
 # 判断变量是否存在。如果不存在则使用默认值
 init_env() {
-    if [ ! -e "$CONFIG_PATH" ]; then
-        if [ ! -e "/root/.config/clash/config.yaml" ]; then
-            echo "not found config path"
-            exit 127
-        fi
-        CONFIG_PATH="/root/.config/clash/config.yaml"
-    fi
+    # if [ ! -e "$CONFIG_PATH" ]; then
+    #     if [ ! -e "/root/.config/clash/config.yaml" ]; then
+    #         echo "not found config path"
+    #         exit 127
+    #     fi
+    #     CONFIG_PATH="/root/.config/clash/config.yaml"
+    # fi
+    CONFIG_PATH=$CLASH_DIR/config.yaml
     echo "use config path: $CONFIG_PATH"
 
     if [[ ! -v TUN_NAME ]]; then
@@ -41,11 +42,12 @@ init_env() {
     if [[ ! -v MARK_ID ]]; then
         MARK_ID="0x162"
     fi
-    RUNNING_UID=$(id -u)
-    if ((RUNNING_UID != 0)); then
-        echo "unsupported RUNNING_UID=$RUNNING_UID"
+    RUNNING_UID=$(id $RUN_USER -u)
+    if [[ ! -v RUNNING_UID ]]; then
+        echo "not found RUNNING_UID"
         exit 1
     fi
+    echo "found RUNNING_UID=$RUNNING_UID"
 
     local context=$(parse_yaml $CONFIG_PATH)
 
@@ -100,8 +102,10 @@ setup_tun_iptables() {
     iptables -t mangle -A CLASH -d 10.0.0.0/8 -j RETURN
     # docker internal 
     iptables -t mangle -A CLASH -s 172.16.0.0/12 -j RETURN
-    # filter clash traffic running under uid and mark 注意顺序 owner过滤 要在 CLASH之前
-    iptables -t mangle -A CLASH -m owner ! --uid-owner $RUNNING_UID -j MARK --set-xmark $MARK_ID
+    # filter clash traffic running under uid 注意顺序 owner过滤 要在 CLASH之前
+    iptables -t mangle -I CLASH -m owner --uid-owner $RUNNING_UID -j RETURN
+    # mark
+    iptables -t mangle -A CLASH -j MARK --set-xmark $MARK_ID
 
     ## 接管转发流量
     iptables -t mangle -N CLASH_EXTERNAL
@@ -207,11 +211,10 @@ setup_redir() {
 # 在clash正常启动后返回。从clash输出中判断dns或restful api监听启动
 start_clash() {
     echo 'starting clash'
-    touch temp.log
-    /clash > temp.log &
+    sudo -H -u $RUN_USER clash -d $CLASH_DIR > $CLASH_DIR/temp.log &
     clash_pid=$!
     echo "the running clash pid is $clash_pid"
-    tail -f temp.log | while read -r line
+    tail -f $CLASH_DIR/temp.log | while read -r line
     do 
         echo "$line"
         if echo "$line" | grep "listening at" &> /dev/null; then
@@ -222,14 +225,18 @@ start_clash() {
     done
 }
 
-main() {
-    if [[ ! -v ENABLED ]]; then
-        echo "direct starting clash"
-        /clash &
-        wait $!
-        exit 0
-    fi
+if [[ ! -v ENABLED ]]; then
+    # echo "direct starting clash"
+    # mkdir -p /home/clash/.config/clash
+    # chown -R clash /home/clash/.config/clash
+    # cp /root/.config/clash/config.yaml /home/clash/.config/clash/
+    # chown clash /clash
+    # setcap 'cap_net_admin,cap_net_bind_service=+ep' /clash
+    # exec sudo -H -u clash /clash
 
+    echo "direct starting clash"
+    exec sudo -H -u $RUN_USER clash -d $CLASH_DIR
+else
     init_env
     clean
 
@@ -253,10 +260,7 @@ main() {
     # 等待clash退出清理
     trap clean SIGTERM
     # 在sh后台输出日志
-    tail -f temp.log &
+    tail -f $CLASH_DIR/temp.log &
     echo "waiting clash $clash_pid"
     wait $clash_pid
-    exit 0
-}
-
-main
+fi

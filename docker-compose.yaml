@@ -16,7 +16,7 @@ services:
     volumes: 
       - type: bind
         source: ./config.yaml
-        target: /root/.config/clash/config.yaml
+        target: /clash/config.yaml
         read_only: true
     # 自定义dns 当clash作为本地上游dns时 clash启动时无法找到可用的dns
     dns: 
