@@ -203,6 +203,14 @@ proxy-groups:
     use:
       - NeteaseMusic
 
+  - name: SSH22
+    type: select
+    proxies:
+      - DIRECT
+      - HK-Test
+      - IEPL-Test
+      - SGP-Test
+      - US-Test
   - name: Apple
     type: select
     proxies:
@@ -345,6 +353,7 @@ rules:
   - DOMAIN-KEYWORD,www.google.,Google-Search
   - RULE-SET,google,Google
   - DOMAIN-KEYWORD,epic,Epic
+  - DST-PORT,22,SSH22
   - RULE-SET,proxy,Proxy
   - RULE-SET,direct,DIRECT
   - RULE-SET,telegramcidr,Telegram
