@@ -21,6 +21,22 @@ function parse_yaml {
    }'
 }
 
+setup_private() {
+    if [ -z $1 -o -z $2 ]; then 
+        echo "not found args 1=$1, 2=$2"
+        exit 1
+    fi
+    iptables -t $1 -A $2 -d 0.0.0.0/8 -j RETURN
+    iptables -t $1 -A $2 -d 127.0.0.0/8 -j RETURN
+    iptables -t $1 -A $2 -d 224.0.0.0/4 -j RETURN
+    iptables -t $1 -A $2 -d 172.16.0.0/12 -j RETURN
+    iptables -t $1 -A $2 -d 127.0.0.0/8 -j RETURN
+    iptables -t $1 -A $2 -d 169.254.0.0/16 -j RETURN
+    iptables -t $1 -A $2 -d 240.0.0.0/4 -j RETURN
+    iptables -t $1 -A $2 -d 192.168.0.0/16 -j RETURN
+    iptables -t $1 -A $2 -d 10.0.0.0/8 -j RETURN
+}
+
 # 判断变量是否存在。如果不存在则使用默认值
 init_env() {
     # if [ ! -e "$CONFIG_PATH" ]; then
@@ -145,6 +161,9 @@ clean() {
     # delete routing table and fwmark
     ip route del default dev "$TUN_NAME" table "$TABLE_ID" 2> /dev/null
     ip rule del fwmark "$MARK_ID" lookup "$TABLE_ID" 2> /dev/null
+    # route for tproxy
+    ip rule del fwmark $MARK_ID table $TABLE_ID 2> /dev/null
+    ip route del local default dev lo table $TABLE_ID 2> /dev/null
 
     # clash nat chain
     iptables -t nat -D OUTPUT -j CLASH 2> /dev/null
@@ -171,41 +190,49 @@ setup_tun_fakeip() {
     setup_tun_iptables
 }
 
+# redir模式。对转发流量使用tcp redir, udp tproxy方式代理。
+# 本机仅代理tcp，支持docker内部代理。不支持fakeip，
+# 存在icmp无法回应的问题，tun-fakeip可以提供更好的服务。
 setup_redir() {
     echo "setting up redir"
-
-    ## 接管clash宿主机内部流量
+    # local 
+    # 接管clash宿主机内部流量
     iptables -t nat -N CLASH
     iptables -t nat -F CLASH
     # private
-    iptables -t nat -A CLASH -d 0.0.0.0/8 -j RETURN
-    iptables -t nat -A CLASH -d 127.0.0.0/8 -j RETURN
-    iptables -t nat -A CLASH -d 224.0.0.0/4 -j RETURN
-    iptables -t nat -A CLASH -d 172.16.0.0/12 -j RETURN
-    iptables -t nat -A CLASH -d 127.0.0.0/8 -j RETURN
-    iptables -t nat -A CLASH -d 169.254.0.0/16 -j RETURN
-    iptables -t nat -A CLASH -d 240.0.0.0/4 -j RETURN
-    iptables -t nat -A CLASH -d 192.168.0.0/16 -j RETURN
-    iptables -t nat -A CLASH -d 10.0.0.0/8 -j RETURN
+    setup_private nat CLASH
     # 过滤本机clash流量 避免循环 user无法使用代理
     iptables -t nat -A CLASH -m owner --uid-owner "$RUNNING_UID" -j RETURN
     iptables -t nat -A CLASH -p tcp -j REDIRECT --to-port "$REDIR_PORT"
-    iptables -t nat -I OUTPUT -j CLASH
 
-    # # 接管主机转发流量
+    iptables -t nat -A OUTPUT -j CLASH
+
+    # 转发流量 tcp redir
     iptables -t nat -N CLASH_EXTERNAL
     iptables -t nat -F CLASH_EXTERNAL
+    # google dns first
+    iptables -t nat -A CLASH_EXTERNAL -p tcp -d 8.8.8.8 -j REDIRECT --to-port "$REDIR_PORT"
+    iptables -t nat -A CLASH_EXTERNAL -p tcp -d 8.8.4.4 -j REDIRECT --to-port "$REDIR_PORT"
     # private
-    iptables -t nat -A CLASH_EXTERNAL -d 127.0.0.0/8 -j RETURN
-    iptables -t nat -A CLASH_EXTERNAL -d 10.0.0.0/8 -j RETURN
-    iptables -t nat -A CLASH_EXTERNAL -d 169.254.0.0/16 -j RETURN
-    iptables -t nat -A CLASH_EXTERNAL -d 192.168.0.0/16 -j RETURN
-    iptables -t nat -A CLASH_EXTERNAL -d 224.0.0.0/4 -j RETURN
-    iptables -t nat -A CLASH_EXTERNAL -d 240.0.0.0/4 -j RETURN
-    iptables -t nat -A CLASH_EXTERNAL -d 172.16.0.0/12 -j RETURN
-
+    setup_private nat CLASH_EXTERNAL
+    # tcp redir
     iptables -t nat -A CLASH_EXTERNAL -p tcp -j REDIRECT --to-port "$REDIR_PORT"
-    iptables -t nat -I PREROUTING -j CLASH_EXTERNAL
+
+    iptables -t nat -A PREROUTING -j CLASH_EXTERNAL
+
+    # 转发流量 udp tproxy
+    iptables -t mangle -N CLASH_EXTERNAL
+    iptables -t mangle -F CLASH_EXTERNAL
+    # private
+    setup_private mangle CLASH_EXTERNAL
+    # udp tproxy redir
+    iptables -t mangle -A CLASH_EXTERNAL -p udp -j TPROXY --on-port "$REDIR_PORT" --tproxy-mark $MARK_ID
+
+    iptables -t mangle -A PREROUTING -j CLASH_EXTERNAL
+
+    # route udp
+    ip rule add fwmark $MARK_ID table $TABLE_ID
+    ip route add local default dev lo table $TABLE_ID
 }
 
 # 在clash正常启动后返回。从clash输出中判断dns或restful api监听启动
@@ -251,7 +278,6 @@ else
     # redir host
     elif [[ ! -v TUN_ENABLED && -v REDIR_PORT ]]; then
         start_clash
-        echo "setting up redir with REDIR_PORT=$REDIR_PORT, RUNNING_UID=$RUNNING_UID"
         setup_redir
     else
         echo "No startup mode found, exiting"
