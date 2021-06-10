@@ -21,6 +21,8 @@ function parse_yaml {
    }'
 }
 
+# 向iptables中指定表$1中的$2链中过滤私有地址
+# 如：setup_private nat CLASH
 setup_private() {
     if [ -z $1 -o -z $2 ]; then 
         echo "not found args 1=$1, 2=$2"
@@ -103,19 +105,12 @@ init_env() {
 # 过滤指定运行clash uid的流量防止循环。本机docker内部网络无法直接被代理，
 # 如果不`-s 172.16.0.0/12 -j RETURN`则docker内部无法ping到外部网络，
 # 可能是在mangle表后路由到tun设备后无法被iptables nat中的DOCKER链处理。
-setup_tun_iptables() {
+setup_tun() {
     ## 接管clash宿主机内部流量
     iptables -t mangle -N CLASH
     iptables -t mangle -F CLASH
     # private
-    iptables -t mangle -A CLASH -d 0.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH -d 127.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH -d 224.0.0.0/4 -j RETURN
-    iptables -t mangle -A CLASH -d 172.16.0.0/12 -j RETURN
-    iptables -t mangle -A CLASH -d 169.254.0.0/16 -j RETURN
-    iptables -t mangle -A CLASH -d 240.0.0.0/4 -j RETURN
-    iptables -t mangle -A CLASH -d 192.168.0.0/16 -j RETURN
-    iptables -t mangle -A CLASH -d 10.0.0.0/8 -j RETURN
+    setup_private mangle CLASH
     # docker internal 
     iptables -t mangle -A CLASH -s 172.16.0.0/12 -j RETURN
     # filter clash traffic running under uid 注意顺序 owner过滤 要在 CLASH之前
@@ -127,14 +122,7 @@ setup_tun_iptables() {
     iptables -t mangle -N CLASH_EXTERNAL
     iptables -t mangle -F CLASH_EXTERNAL
     # private
-    iptables -t mangle -A CLASH_EXTERNAL -d 0.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 127.0.0.0/8 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 224.0.0.0/4 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 172.16.0.0/12 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 169.254.0.0/16 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 240.0.0.0/4 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 192.168.0.0/16 -j RETURN
-    iptables -t mangle -A CLASH_EXTERNAL -d 10.0.0.0/8 -j RETURN
+    setup_private mangle CLASH_EXTERNAL
     # docker internal 
     iptables -t mangle -A CLASH_EXTERNAL -s 172.16.0.0/12 -j RETURN
     # mark
@@ -148,46 +136,6 @@ setup_tun_iptables() {
     # utun route table
     ip route replace default dev "$TUN_NAME" table "$TABLE_ID"
     ip rule add fwmark "$MARK_ID" lookup "$TABLE_ID"
-}
-
-setup_tun_redir() {
-    echo 'start seting up tun'
-    setup_tun_iptables
-}
-
-clean() {
-    echo "cleaning iptables"
-
-    # delete routing table and fwmark
-    ip route del default dev "$TUN_NAME" table "$TABLE_ID" 2> /dev/null
-    ip rule del fwmark "$MARK_ID" lookup "$TABLE_ID" 2> /dev/null
-    # route for tproxy
-    ip rule del fwmark $MARK_ID table $TABLE_ID 2> /dev/null
-    ip route del local default dev lo table $TABLE_ID 2> /dev/null
-
-    # clash nat chain
-    iptables -t nat -D OUTPUT -j CLASH 2> /dev/null
-    iptables -t nat -F CLASH 2> /dev/null
-    iptables -t nat -X CLASH 2> /dev/null
-
-    iptables -t nat -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
-    iptables -t nat -F CLASH_EXTERNAL 2> /dev/null
-    iptables -t nat -X CLASH_EXTERNAL 2> /dev/null
-
-    # clash mangle chain
-    iptables -t mangle -D OUTPUT -j CLASH 2> /dev/null
-    iptables -t mangle -F CLASH 2> /dev/null
-    iptables -t mangle -X CLASH 2> /dev/null
-    
-    iptables -t mangle -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
-    iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
-    iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
-}
-
-# 支持重定向到clash dns
-setup_tun_fakeip() {
-    echo "setting up tun fake-ip"
-    setup_tun_iptables
 }
 
 # redir模式。对转发流量使用tcp redir, udp tproxy方式代理。
@@ -235,6 +183,35 @@ setup_redir() {
     ip route add local default dev lo table $TABLE_ID
 }
 
+clean() {
+    echo "cleaning iptables"
+
+    # delete routing table and fwmark
+    ip route del default dev "$TUN_NAME" table "$TABLE_ID" 2> /dev/null
+    ip rule del fwmark "$MARK_ID" lookup "$TABLE_ID" 2> /dev/null
+    # route for tproxy
+    ip rule del fwmark $MARK_ID table $TABLE_ID 2> /dev/null
+    ip route del local default dev lo table $TABLE_ID 2> /dev/null
+
+    # clash nat chain
+    iptables -t nat -D OUTPUT -j CLASH 2> /dev/null
+    iptables -t nat -F CLASH 2> /dev/null
+    iptables -t nat -X CLASH 2> /dev/null
+
+    iptables -t nat -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
+    iptables -t nat -F CLASH_EXTERNAL 2> /dev/null
+    iptables -t nat -X CLASH_EXTERNAL 2> /dev/null
+
+    # clash mangle chain
+    iptables -t mangle -D OUTPUT -j CLASH 2> /dev/null
+    iptables -t mangle -F CLASH 2> /dev/null
+    iptables -t mangle -X CLASH 2> /dev/null
+    
+    iptables -t mangle -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
+    iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
+    iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
+}
+
 # 在clash正常启动后返回。从clash输出中判断dns或restful api监听启动
 start_clash() {
     echo 'starting clash'
@@ -270,11 +247,11 @@ else
     # redir-host with tun    
     if [[ -v TUN_ENABLED && -v DNS_REDIR_HOST_ENABLED ]]; then
         start_clash
-        setup_tun_redir
+        setup_tun
     # fake-ip with tun
     elif [[ -v TUN_ENABLED && ! -v DNS_REDIR_HOST_ENABLED ]]; then
         start_clash
-        setup_tun_fakeip
+        setup_tun
     # redir host
     elif [[ ! -v TUN_ENABLED && -v REDIR_PORT ]]; then
         start_clash
