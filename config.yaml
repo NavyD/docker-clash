@@ -13,7 +13,7 @@ external-ui: /ui
 # When set to false, resolver won't translate hostnames to IPv6 addresses
 # ipv6: true
 tun:
-  enable: true
+  enable: false
   stack: system
   # stack: gvisor
   dns-hijack:
@@ -23,8 +23,8 @@ dns:
   enable: true
   # ipv6: true
   ipv6: false
-  enhanced-mode: fake-ip
-  # enhanced-mode: redir-host
+  # enhanced-mode: fake-ip
+  enhanced-mode: redir-host
   fake-ip-range: 198.18.0.1/16
   listen: 0.0.0.0:5353
   use-hosts: true 

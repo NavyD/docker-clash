@@ -101,6 +101,9 @@ init_env() {
     fi
 }
 
+# bug:在tun fakeip启动后docker bridge无法访问外网icmp,tcp. tun redir没有问题
+# 在启动时可以访问subconverter，确定是iptables的问题
+
 # 代理本机与外部流量。在iptables mangle中设置mark并过滤内部私有地址、
 # 过滤指定运行clash uid的流量防止循环。本机docker内部网络无法直接被代理，
 # 如果不`-s 172.16.0.0/12 -j RETURN`则docker内部无法ping到外部网络，
@@ -139,7 +142,7 @@ setup_tun() {
 }
 
 # redir模式。对转发流量使用tcp redir, udp tproxy方式代理。
-# 本机仅代理tcp，支持docker内部代理。不支持fakeip，
+# 本机仅代理tcp，不支持docker内部代理。不支持fakeip，
 # 存在icmp无法回应的问题，tun-fakeip可以提供更好的服务。
 setup_redir() {
     echo "setting up redir"
@@ -163,6 +166,8 @@ setup_redir() {
     iptables -t nat -A CLASH_EXTERNAL -p tcp -d 8.8.4.4 -j REDIRECT --to-port "$REDIR_PORT"
     # private
     setup_private nat CLASH_EXTERNAL
+    # docker internal
+    iptables -t nat -A CLASH_EXTERNAL -s 172.16.0.0/12 -j RETURN
     # tcp redir
     iptables -t nat -A CLASH_EXTERNAL -p tcp -j REDIRECT --to-port "$REDIR_PORT"
 
@@ -173,6 +178,8 @@ setup_redir() {
     iptables -t mangle -F CLASH_EXTERNAL
     # private
     setup_private mangle CLASH_EXTERNAL
+    # docker internal
+    iptables -t mangle -A CLASH_EXTERNAL -s 172.16.0.0/12 -j RETURN
     # udp tproxy redir
     iptables -t mangle -A CLASH_EXTERNAL -p udp -j TPROXY --on-port "$REDIR_PORT" --tproxy-mark $MARK_ID
 
