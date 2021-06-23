@@ -9,8 +9,9 @@ services:
     environment: 
       - ENABLED=true
     # 使用clash-premium的docker镜像无法创建tun: https://github.com/Dreamacro/clash/issues/736
-    cap_add: 
-      - NET_ADMIN
+    # cap_add: 
+    #   - NET_ADMIN
+    privileged: true
     devices:
       - /dev/net/tun
     volumes: 

@@ -28,15 +28,29 @@ setup_private() {
         echo "not found args 1=$1, 2=$2"
         exit 1
     fi
-    iptables -t $1 -A $2 -d 0.0.0.0/8 -j RETURN
-    iptables -t $1 -A $2 -d 127.0.0.0/8 -j RETURN
-    iptables -t $1 -A $2 -d 224.0.0.0/4 -j RETURN
-    iptables -t $1 -A $2 -d 172.16.0.0/12 -j RETURN
-    iptables -t $1 -A $2 -d 127.0.0.0/8 -j RETURN
-    iptables -t $1 -A $2 -d 169.254.0.0/16 -j RETURN
-    iptables -t $1 -A $2 -d 240.0.0.0/4 -j RETURN
-    iptables -t $1 -A $2 -d 192.168.0.0/16 -j RETURN
-    iptables -t $1 -A $2 -d 10.0.0.0/8 -j RETURN
+    iptables -t "$1" -A "$2" -d 0.0.0.0/8 -j RETURN
+    iptables -t "$1" -A "$2" -d 127.0.0.0/8 -j RETURN
+    iptables -t "$1" -A "$2" -d 224.0.0.0/4 -j RETURN
+    iptables -t "$1" -A "$2" -d 172.16.0.0/12 -j RETURN
+    iptables -t "$1" -A "$2" -d 127.0.0.0/8 -j RETURN
+    iptables -t "$1" -A "$2" -d 169.254.0.0/16 -j RETURN
+    iptables -t "$1" -A "$2" -d 240.0.0.0/4 -j RETURN
+    iptables -t "$1" -A "$2" -d 192.168.0.0/16 -j RETURN
+    iptables -t "$1" -A "$2" -d 10.0.0.0/8 -j RETURN
+}
+
+# 使用sysctl设置linux内核相关属性。允许docker通过iptables使用clash流量
+sysctl_network() {
+    if ! sysctl -w net.bridge.bridge-nf-call-iptables="$1" 2> /dev/null; then
+        echo 'sysctl not available'
+        exit 1  
+    fi
+    sysctl -w net.bridge.bridge-nf-call-ip6tables="$1"
+    sysctl -w net.bridge.bridge-nf-call-arptables="$1"
+
+    # 排除 rp_filter
+    # sysctl -w net.ipv4.conf."$TUN_NAME".rp_filter="$1" 2> /dev/null
+    # sysctl -w net.ipv4.conf.all.rp_filter="$1"
 }
 
 # 判断变量是否存在。如果不存在则使用默认值
@@ -106,7 +120,7 @@ init_env() {
 
 # 代理本机与外部流量。在iptables mangle中设置mark并过滤内部私有地址、
 # 过滤指定运行clash uid的流量防止循环。本机docker内部网络无法直接被代理，
-# 如果不`-s 172.16.0.0/12 -j RETURN`则docker内部无法ping到外部网络，
+# 如果不`-s 172.16.0.0/16 -j RETURN`则docker内部无法ping到外部网络，
 # 可能是在mangle表后路由到tun设备后无法被iptables nat中的DOCKER链处理。
 setup_tun() {
     ## 接管clash宿主机内部流量
@@ -115,9 +129,9 @@ setup_tun() {
     # private
     setup_private mangle CLASH
     # docker internal 
-    iptables -t mangle -A CLASH -s 172.16.0.0/12 -j RETURN
+    iptables -t mangle -A CLASH -s 172.16.0.0/16 -j RETURN
     # filter clash traffic running under uid 注意顺序 owner过滤 要在 CLASH之前
-    iptables -t mangle -I CLASH -m owner --uid-owner $RUNNING_UID -j RETURN
+    iptables -t mangle -I CLASH -m owner --uid-owner "$RUNNING_UID" -j RETURN
     # mark
     iptables -t mangle -A CLASH -j MARK --set-xmark $MARK_ID
 
@@ -127,7 +141,7 @@ setup_tun() {
     # private
     setup_private mangle CLASH_EXTERNAL
     # docker internal 
-    iptables -t mangle -A CLASH_EXTERNAL -s 172.16.0.0/12 -j RETURN
+    iptables -t mangle -A CLASH_EXTERNAL -s 172.16.0.0/16 -j RETURN
     # mark
     iptables -t mangle -A CLASH_EXTERNAL -j MARK --set-xmark $MARK_ID
 
@@ -142,10 +156,13 @@ setup_tun() {
 }
 
 # redir模式。对转发流量使用tcp redir, udp tproxy方式代理。
-# 本机仅代理tcp，不支持docker内部代理。不支持fakeip，
-# 存在icmp无法回应的问题，tun-fakeip可以提供更好的服务。
+# 本机仅代理tcp，支持docker内部代理。支持fakeip，存在icmp无法回应的问题，tun-fakeip可以提供更好的服务。
 setup_redir() {
     echo "setting up redir"
+
+    # 配置docker host
+    sysctl_network 0
+
     # local 
     # 接管clash宿主机内部流量
     iptables -t nat -N CLASH
@@ -166,8 +183,6 @@ setup_redir() {
     iptables -t nat -A CLASH_EXTERNAL -p tcp -d 8.8.4.4 -j REDIRECT --to-port "$REDIR_PORT"
     # private
     setup_private nat CLASH_EXTERNAL
-    # docker internal
-    iptables -t nat -A CLASH_EXTERNAL -s 172.16.0.0/12 -j RETURN
     # tcp redir
     iptables -t nat -A CLASH_EXTERNAL -p tcp -j REDIRECT --to-port "$REDIR_PORT"
 
@@ -178,8 +193,6 @@ setup_redir() {
     iptables -t mangle -F CLASH_EXTERNAL
     # private
     setup_private mangle CLASH_EXTERNAL
-    # docker internal
-    iptables -t mangle -A CLASH_EXTERNAL -s 172.16.0.0/12 -j RETURN
     # udp tproxy redir
     iptables -t mangle -A CLASH_EXTERNAL -p udp -j TPROXY --on-port "$REDIR_PORT" --tproxy-mark $MARK_ID
 
@@ -217,6 +230,8 @@ clean() {
     iptables -t mangle -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
     iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
     iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
+    # 清空sysctl
+    # sysctl_network 1 2> /dev/null
 }
 
 # 在clash正常启动后返回。从clash输出中判断dns或restful api监听启动
@@ -225,7 +240,7 @@ start_clash() {
     sudo -H -u $RUN_USER clash -d $CLASH_DIR > $CLASH_DIR/temp.log &
     clash_pid=$!
     echo "the running clash pid is $clash_pid"
-    tail -f $CLASH_DIR/temp.log | while read -r line
+    tail -f "$CLASH_DIR"/temp.log | while read -r line
     do 
         echo "$line"
         if echo "$line" | grep "listening at" &> /dev/null; then
@@ -237,16 +252,8 @@ start_clash() {
 }
 
 if [[ ! -v ENABLED ]]; then
-    # echo "direct starting clash"
-    # mkdir -p /home/clash/.config/clash
-    # chown -R clash /home/clash/.config/clash
-    # cp /root/.config/clash/config.yaml /home/clash/.config/clash/
-    # chown clash /clash
-    # setcap 'cap_net_admin,cap_net_bind_service=+ep' /clash
-    # exec sudo -H -u clash /clash
-
     echo "direct starting clash"
-    exec sudo -H -u $RUN_USER clash -d $CLASH_DIR
+    exec sudo -H -u "$RUN_USER" clash -d "$CLASH_DIR"
 else
     init_env
     clean
@@ -267,10 +274,11 @@ else
         echo "No startup mode found, exiting"
         exit 0
     fi 
+
     # 等待clash退出清理
     trap clean SIGTERM
     # 在sh后台输出日志
-    tail -f $CLASH_DIR/temp.log &
+    tail -f "$CLASH_DIR"/temp.log &
     echo "waiting clash $clash_pid"
     wait $clash_pid
 fi
