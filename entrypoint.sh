@@ -128,8 +128,6 @@ setup_tun() {
     iptables -t mangle -F CLASH
     # private
     setup_private mangle CLASH
-    # docker internal 
-    iptables -t mangle -A CLASH -s 172.16.0.0/16 -j RETURN
     # filter clash traffic running under uid 注意顺序 owner过滤 要在 CLASH之前
     iptables -t mangle -I CLASH -m owner --uid-owner "$RUNNING_UID" -j RETURN
     # mark
@@ -138,10 +136,10 @@ setup_tun() {
     ## 接管转发流量
     iptables -t mangle -N CLASH_EXTERNAL
     iptables -t mangle -F CLASH_EXTERNAL
+    # filter tun interface traffic for docker
+    iptables -t mangle -A CLASH_EXTERNAL -i "$TUN_NAME" -j RETURN
     # private
     setup_private mangle CLASH_EXTERNAL
-    # docker internal 
-    iptables -t mangle -A CLASH_EXTERNAL -s 172.16.0.0/16 -j RETURN
     # mark
     iptables -t mangle -A CLASH_EXTERNAL -j MARK --set-xmark $MARK_ID
 
