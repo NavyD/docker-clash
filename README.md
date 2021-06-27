@@ -1,4 +1,4 @@
-# docker透明代理部署
+# docker透明代理
 
 使用docker部署clash-premium 基于tun的透明代理。支持从配置文件中读取clash工作模式做出不同配置
 
@@ -7,10 +7,11 @@
 - tun-redir
 - tun-fake-ip
 
-支持[yacd web ui](https://github.com/haishanh/yacd)访问，在配置文件中添加：
+支持[yacd web ui](https://github.com/haishanh/yacd)访问`http://localhost:9090/ui`，在配置文件中添加：
 
 ```yml
 # socks-port: 7891
+external-controller: 0.0.0.0:9090
 external-ui: /ui
 # ...
 ```
@@ -26,6 +27,7 @@ services:
   clash-premium-ui:
     image: navyd/clash-premium-ui:latest
     container_name: clash
+    # 使用linux 主机网络
     network_mode: host
     restart: always
     environment: 
@@ -53,6 +55,8 @@ services:
 
 ```
 
+然后配置clash作为系统dns `127.0.0.1:53`端口启动。如果使用dnsmasq作为本机dns，clash可作为dnsmasq上游dns不需要在53端口启动
+
 支持的环境变量：
 
 | name       | default | desc                                                  |
@@ -66,3 +70,4 @@ services:
 - 如果没有给docker privileged权限将无法修改本机sys属性，可能会遇到ip无法转发、无法代理docker bridge流量、tun接口rp_filter反射路由的问题。如果清楚clash工作原理，可以仅配置`cap_add: - NET_ADMIN`
 - 使用`nobody`启动clash区分clash流量循环
 - 非tun模式对本机不支持udp代理，但本机docker支持udp代理
+- 仅支持linux host模式，性能与原生linux应用一致
