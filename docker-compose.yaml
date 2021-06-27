@@ -1,8 +1,8 @@
 version: "3"
 
 services:
-  clash-premium-ui:
-    image: navyd/clash-premium-ui:latest
+  clash:
+    image: navyd/clash:latest
     container_name: clash
     network_mode: host
     restart: always
