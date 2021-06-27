@@ -244,6 +244,13 @@ if [ "$ENABLED" = true ]; then
         setup_redir
     fi
 
+    # ip forward
+    if ! sysctl -w net/ipv4/ip_forward=1 2> /dev/null; then
+        echo 'enabled ip forward'
+    else
+        echo 'failed to enable ip forward'
+    fi
+
     # 等待clash退出清理
     trap clean SIGTERM
 
