@@ -22,9 +22,9 @@ function parse_yaml {
 }
 
 # 向iptables中指定表$1中的$2链中过滤私有地址
-# 如：setup_private nat CLASH
-setup_private() {
-    if [ -z $1 -o -z $2 ]; then 
+# 如：local_iptables nat CLASH
+local_iptables() {
+    if [ -z "$1" ] || [ -z "$2" ]; then 
         echo "not found args 1=$1, 2=$2"
         exit 1
     fi
@@ -37,20 +37,6 @@ setup_private() {
     iptables -t "$1" -A "$2" -d 240.0.0.0/4 -j RETURN
     iptables -t "$1" -A "$2" -d 192.168.0.0/16 -j RETURN
     iptables -t "$1" -A "$2" -d 10.0.0.0/8 -j RETURN
-}
-
-# 使用sysctl设置linux内核相关属性。允许docker通过iptables使用clash流量
-sysctl_network() {
-    if ! sysctl -w net.bridge.bridge-nf-call-iptables="$1" 2> /dev/null; then
-        echo 'sysctl not available'
-        exit 1  
-    fi
-    sysctl -w net.bridge.bridge-nf-call-ip6tables="$1"
-    sysctl -w net.bridge.bridge-nf-call-arptables="$1"
-
-    # 排除 rp_filter
-    # sysctl -w net.ipv4.conf."$TUN_NAME".rp_filter="$1" 2> /dev/null
-    # sysctl -w net.ipv4.conf.all.rp_filter="$1"
 }
 
 # 判断变量是否存在。如果不存在则使用默认值
@@ -74,14 +60,15 @@ init_env() {
     if [[ ! -v MARK_ID ]]; then
         MARK_ID="0x162"
     fi
-    RUNNING_UID=$(id $RUN_USER -u)
-    if [[ ! -v RUNNING_UID ]]; then
+    RUNNING_UID=$(id "$RUN_USER" -u)
+    if [ -z "$RUNNING_UID" ]; then
         echo "not found RUNNING_UID"
         exit 1
     fi
     echo "found RUNNING_UID=$RUNNING_UID"
 
-    local context=$(parse_yaml $CONFIG_PATH)
+    local context
+    context=$(parse_yaml "$CONFIG_PATH")
 
     # tun
     if [[ ! -v TUN_ENABLED ]]; then
@@ -89,21 +76,13 @@ init_env() {
             TUN_ENABLED=true
             echo "tun enabled from $CONFIG_PATH"
         else 
-            echo "TUN not enabled from $CONFIG_PATH"
+            TUN_ENABLED=false
+            echo "TUN disabled from $CONFIG_PATH"
         fi
     else
         echo "TUN enabled"
     fi
 
-    # dns redir-host
-    if [[ ! -v DNS_REDIR_HOST_ENABLED ]]; then
-        if grep '^dns_enhanced-mode="redir-host"' <<< "$context" &> /dev/null; then
-            echo "found DNS_REDIR_HOST_ENABLED=true from $CONFIG_PATH"
-            DNS_REDIR_HOST_ENABLED=true
-        else
-            unset DNS_REDIR_HOST_ENABLED
-        fi
-    fi
     # get redir port on non tun
     if [[ ! -v REDIR_PORT ]]; then
         REDIR_PORT=$(grep -E '^redir-port' <<< "$context" | sed 's/"//g' | awk -F= '{print $2}')
@@ -115,42 +94,42 @@ init_env() {
     fi
 }
 
-# bug:在tun fakeip启动后docker bridge无法访问外网icmp,tcp. tun redir没有问题
-# 在启动时可以访问subconverter，确定是iptables的问题
-
 # 代理本机与外部流量。在iptables mangle中设置mark并过滤内部私有地址、
-# 过滤指定运行clash uid的流量防止循环。本机docker内部网络无法直接被代理，
-# 如果不`-s 172.16.0.0/16 -j RETURN`则docker内部无法ping到外部网络，
-# 可能是在mangle表后路由到tun设备后无法被iptables nat中的DOCKER链处理。
+# 过滤指定运行clash uid的流量防止循环。允许本机与docker通过代理
 setup_tun() {
+    echo "setting up tun"
+
     ## 接管clash宿主机内部流量
     iptables -t mangle -N CLASH
     iptables -t mangle -F CLASH
+    # filter clash traffic running under uid 注意顺序 owner过滤 要在 set mark之前
+    iptables -t mangle -A CLASH -m owner --uid-owner "$RUNNING_UID" -j RETURN
     # private
-    setup_private mangle CLASH
-    # filter clash traffic running under uid 注意顺序 owner过滤 要在 CLASH之前
-    iptables -t mangle -I CLASH -m owner --uid-owner "$RUNNING_UID" -j RETURN
+    local_iptables mangle CLASH
     # mark
     iptables -t mangle -A CLASH -j MARK --set-xmark $MARK_ID
+
+    iptables -t mangle -A OUTPUT -j CLASH
 
     ## 接管转发流量
     iptables -t mangle -N CLASH_EXTERNAL
     iptables -t mangle -F CLASH_EXTERNAL
-    # filter tun interface traffic for docker
-    iptables -t mangle -A CLASH_EXTERNAL -i "$TUN_NAME" -j RETURN
     # private
-    setup_private mangle CLASH_EXTERNAL
+    local_iptables mangle CLASH_EXTERNAL
+    # avoid rerouting for local docker
+    iptables -t mangle -A CLASH_EXTERNAL -i "$TUN_NAME" -j RETURN
     # mark
     iptables -t mangle -A CLASH_EXTERNAL -j MARK --set-xmark $MARK_ID
 
-    # 本机流量
-    iptables -t mangle -A OUTPUT -j CLASH
-    # 代理
     iptables -t mangle -A PREROUTING -j CLASH_EXTERNAL
 
     # utun route table
     ip route replace default dev "$TUN_NAME" table "$TABLE_ID"
     ip rule add fwmark "$MARK_ID" lookup "$TABLE_ID"
+
+    # 排除 rp_filter 的故障 反向路由
+    sysctl -w net.ipv4.conf."$TUN_NAME".rp_filter=0 2> /dev/null
+    sysctl -w net.ipv4.conf.all.rp_filter=0 2> /dev/null
 }
 
 # redir模式。对转发流量使用tcp redir, udp tproxy方式代理。
@@ -158,15 +137,12 @@ setup_tun() {
 setup_redir() {
     echo "setting up redir"
 
-    # 配置docker host
-    sysctl_network 0
-
     # local 
     # 接管clash宿主机内部流量
     iptables -t nat -N CLASH
     iptables -t nat -F CLASH
     # private
-    setup_private nat CLASH
+    local_iptables nat CLASH
     # 过滤本机clash流量 避免循环 user无法使用代理
     iptables -t nat -A CLASH -m owner --uid-owner "$RUNNING_UID" -j RETURN
     iptables -t nat -A CLASH -p tcp -j REDIRECT --to-port "$REDIR_PORT"
@@ -180,7 +156,7 @@ setup_redir() {
     iptables -t nat -A CLASH_EXTERNAL -p tcp -d 8.8.8.8 -j REDIRECT --to-port "$REDIR_PORT"
     iptables -t nat -A CLASH_EXTERNAL -p tcp -d 8.8.4.4 -j REDIRECT --to-port "$REDIR_PORT"
     # private
-    setup_private nat CLASH_EXTERNAL
+    local_iptables nat CLASH_EXTERNAL
     # tcp redir
     iptables -t nat -A CLASH_EXTERNAL -p tcp -j REDIRECT --to-port "$REDIR_PORT"
 
@@ -190,7 +166,7 @@ setup_redir() {
     iptables -t mangle -N CLASH_EXTERNAL
     iptables -t mangle -F CLASH_EXTERNAL
     # private
-    setup_private mangle CLASH_EXTERNAL
+    local_iptables mangle CLASH_EXTERNAL
     # udp tproxy redir
     iptables -t mangle -A CLASH_EXTERNAL -p udp -j TPROXY --on-port "$REDIR_PORT" --tproxy-mark $MARK_ID
 
@@ -199,6 +175,14 @@ setup_redir() {
     # route udp
     ip rule add fwmark $MARK_ID table $TABLE_ID
     ip route add local default dev lo table $TABLE_ID
+
+    # configure properties for docker bridge traffic
+    if sysctl -w net.bridge.bridge-nf-call-iptables=0 2> /dev/null; then
+        sysctl -w net.bridge.bridge-nf-call-ip6tables=0 
+        sysctl -w net.bridge.bridge-nf-call-arptables=0
+    else
+        echo 'Unable to configure proxy docker internal traffic with sysctl'
+    fi
 }
 
 clean() {
@@ -228,55 +212,47 @@ clean() {
     iptables -t mangle -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
     iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
     iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
-    # 清空sysctl
-    # sysctl_network 1 2> /dev/null
 }
 
-# 在clash正常启动后返回。从clash输出中判断dns或restful api监听启动
+# 在clash正常启动后返回，设置变量CLASH_PID。从clash输出中判断dns或restful api监听启动
 start_clash() {
-    echo 'starting clash'
-    sudo -H -u $RUN_USER clash -d $CLASH_DIR > $CLASH_DIR/temp.log &
-    clash_pid=$!
-    echo "the running clash pid is $clash_pid"
+    echo "starting clash with $RUN_USER"
+    touch "$CLASH_DIR"/temp.log
+    sudo -u "$RUN_USER" clash -d "$CLASH_DIR" | tee "$CLASH_DIR/temp.log" > /dev/null &
+
+    CLASH_PID=$!
+    echo "the running clash pid is $CLASH_PID"
+
     tail -f "$CLASH_DIR"/temp.log | while read -r line
     do 
         echo "$line"
         if echo "$line" | grep "listening at" &> /dev/null; then
-            echo "clash has started on line: $line"
+            echo "clash has started at line: $line"
             killall tail
             break
         fi
     done
 }
 
-if [[ ! -v ENABLED ]]; then
-    echo "direct starting clash"
-    exec sudo -H -u "$RUN_USER" clash -d "$CLASH_DIR"
-else
+if [ "$ENABLED" = true ]; then
     init_env
     clean
-
-    # redir-host with tun    
-    if [[ -v TUN_ENABLED && -v DNS_REDIR_HOST_ENABLED ]]; then
-        start_clash
+    start_clash
+    if [ "$TUN_ENABLED" = true ]; then
         setup_tun
-    # fake-ip with tun
-    elif [[ -v TUN_ENABLED && ! -v DNS_REDIR_HOST_ENABLED ]]; then
-        start_clash
-        setup_tun
-    # redir host
-    elif [[ ! -v TUN_ENABLED && -v REDIR_PORT ]]; then
-        start_clash
-        setup_redir
     else
-        echo "No startup mode found, exiting"
-        exit 0
-    fi 
+        setup_redir
+    fi
 
     # 等待clash退出清理
     trap clean SIGTERM
+
     # 在sh后台输出日志
     tail -f "$CLASH_DIR"/temp.log &
-    echo "waiting clash $clash_pid"
-    wait $clash_pid
+    
+    echo "waiting clash $CLASH_PID"
+    wait $CLASH_PID
+else
+    echo "direct starting clash with $RUN_USER"
+    exec sudo -u "$RUN_USER" clash -d "$CLASH_DIR"
 fi
