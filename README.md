@@ -1,4 +1,4 @@
-# docker透明代理
+# clash透明代理
 
 使用docker部署clash-premium 基于tun的透明代理。支持从配置文件中读取clash工作模式做出不同配置
 
