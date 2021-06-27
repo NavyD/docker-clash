@@ -7,6 +7,14 @@
 - tun-redir
 - tun-fake-ip
 
+支持[yacd web ui](https://github.com/haishanh/yacd)访问，在配置文件中添加：
+
+```yml
+# socks-port: 7891
+external-ui: /ui
+# ...
+```
+
 ## 使用方法
 
 使用docker-compose文件运行`docker-compose up -d`。如果要更改clash工作模式如：redir -> tun-fakeip，只需要修改对应配置文件重启docker容器即可
