@@ -8,9 +8,11 @@ services:
     restart: always
     environment: 
       - ENABLED=true
-    # 使用clash-premium的docker镜像无法创建tun: https://github.com/Dreamacro/clash/issues/736
+    # 仅使用cap_add将无法代理本机docker
     # cap_add: 
+        # 使用clash-premium的docker镜像无法创建tun: https://github.com/Dreamacro/clash/issues/736
     #   - NET_ADMIN
+    # 使用sysctl支持代理本机docker 内部流量
     privileged: true
     devices:
       - /dev/net/tun
