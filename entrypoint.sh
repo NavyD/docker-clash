@@ -41,56 +41,65 @@ local_iptables() {
 
 # 判断变量是否存在。如果不存在则使用默认值
 init_env() {
-    # if [ ! -e "$CONFIG_PATH" ]; then
-    #     if [ ! -e "/root/.config/clash/config.yaml" ]; then
-    #         echo "not found config path"
-    #         exit 127
-    #     fi
-    #     CONFIG_PATH="/root/.config/clash/config.yaml"
-    # fi
-    CONFIG_PATH=$CLASH_DIR/config.yaml
-    echo "use config path: $CONFIG_PATH"
+    # dockerfile 预置变量
+    if [ -z "$CLASH_DIR" ]; then
+        echo "not found CLASH_DIR"
+        exit 1
+    fi
+    if [ -z "$RUN_USER" ]; then
+        echo "not found RUN_USER"
+        exit 1
+    fi
 
-    if [[ ! -v TUN_NAME ]]; then
+    if [ -z "$TUN_NAME" ]; then
         TUN_NAME="utun"
     fi
-    if [[ ! -v TABLE_ID ]]; then
+    if [ -z "$TABLE_ID" ]; then
         TABLE_ID="0x162"
     fi
-    if [[ ! -v MARK_ID ]]; then
+    if [ -z "$MARK_ID" ]; then
         MARK_ID="0x162"
     fi
+
+    local config_path
+    config_path="$CLASH_DIR/config.yaml"
+    if [ ! -f "$config_path" ]; then
+        echo "not found config file in $config_path"
+        exit 1
+    fi
+    echo "use config path: $config_path"
+
     RUNNING_UID=$(id "$RUN_USER" -u)
     if [ -z "$RUNNING_UID" ]; then
-        echo "not found RUNNING_UID"
+        echo "not found uid with $RUN_USER"
         exit 1
     fi
     echo "found RUNNING_UID=$RUNNING_UID"
 
     local context
-    context=$(parse_yaml "$CONFIG_PATH")
+    context=$(parse_yaml "$config_path")
 
     # tun
-    if [[ ! -v TUN_ENABLED ]]; then
+    if [ -z "$TUN_ENABLED" ]; then
         if grep -E '^tun_enable="true"' <<< "$context" > /dev/null; then
             TUN_ENABLED=true
-            echo "tun enabled from $CONFIG_PATH"
+            echo "tun enabled from $config_path"
         else 
             TUN_ENABLED=false
-            echo "TUN disabled from $CONFIG_PATH"
+            echo "TUN disabled from $config_path"
         fi
     else
         echo "TUN enabled"
     fi
 
     # get redir port on non tun
-    if [[ ! -v REDIR_PORT ]]; then
+    if [ -z "$REDIR_PORT" ]; then
         REDIR_PORT=$(grep -E '^redir-port' <<< "$context" | sed 's/"//g' | awk -F= '{print $2}')
         if [ -z "$REDIR_PORT" ] || ((REDIR_PORT >= 65535 || REDIR_PORT <= 0)); then
-            echo "found invalid REDIR_PORT=$REDIR_PORT from $CONFIG_PATH"
+            echo "found invalid REDIR_PORT=$REDIR_PORT from $config_path"
             exit 127
         fi
-        echo "found REDIR_PORT=$REDIR_PORT from $CONFIG_PATH"
+        echo "found REDIR_PORT=$REDIR_PORT from $config_path"
     fi
 }
 
@@ -245,10 +254,10 @@ if [ "$ENABLED" = true ]; then
     fi
 
     # ip forward
-    if ! sysctl -w net/ipv4/ip_forward=1 2> /dev/null; then
+    if sysctl -w net.ipv4.ip_forward=1 2> /dev/null; then
         echo 'enabled ip forward'
     else
-        echo 'failed to enable ip forward'
+        echo "failed to enable ip forward: $(sysctl net.ipv4.ip_forward)"
     fi
 
     # 等待clash退出清理
