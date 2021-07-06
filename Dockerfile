@@ -1,4 +1,4 @@
-FROM dreamacro/clash-premium:2021.05.08
+FROM dreamacro/clash-premium:2021.07.03
 
 LABEL maintainer = "dhjnavyd@gmail.com"
 
