@@ -1,6 +1,6 @@
 # clash透明代理
 
-使用docker部署clash-premium 基于tun的透明代理。支持从配置文件中读取clash工作模式做出不同配置
+使用docker部署基于[clash-premium](https://github.com/Dreamacro/clash)的透明代理。支持从配置文件中读取clash工作模式做出不同配置
 
 - redir
 - fake-ip
@@ -18,14 +18,14 @@ external-ui: /ui
 
 ## 使用方法
 
-使用docker-compose文件运行`docker-compose up -d`。如果需要实时查看容器后台日志：`docker-compose up`或`docker logs <container_name> -f`
+使用docker-compose文件运行`docker-compose up -d`。如果需要实时查看容器后台日志：`docker-compose up`或`docker logs -f <container_name>`
 
 ```yml
 version: "3"
 
 services:
-  clash-premium-ui:
-    image: navyd/clash-premium-ui:latest
+  clash:
+    image: navyd/clash:latest
     container_name: clash
     # 使用linux 主机网络
     network_mode: host
@@ -51,13 +51,11 @@ services:
     dns: 
       - 8.8.8.8
       - 119.29.29.29
-      - 127.0.0.1
-
 ```
 
-然后配置clash作为系统dns `127.0.0.1:53`端口启动。如果使用dnsmasq作为本机dns，clash可作为dnsmasq上游dns不需要在53端口启动
+然后配置clash作为系统dns `53`端口启动。如果使用dnsmasq作为本机dns，clash可作为dnsmasq上游dns不需要在53端口启动
 
-如果要更改clash工作模式如：`redir -> tun-fakeip`，只需要修改对应配置文件重启docker容器即可
+如果要更改clash工作模式如：`redir -> tun-fakeip`，只需要修改对应配置文件重启docker容器即可如：
 
 ```yml
 # redir
@@ -89,15 +87,15 @@ dns:
 
 ## 注意
 
-- 不允许修改环境变量：`RUN_USER=nobody,CLASH_DIR=/clash`，由于在Dockerfile中指定，直接修改将无法启动容器。如果将dockerfile中修改到shell中，可能无法`chown -R $CLASH_DIR`中挂载的config.yaml权限
+- 不允许修改环境变量：`RUN_USER=nobody,CLASH_DIR=/clash`，由于在Dockerfile中指定，直接修改将无法启动容器。如果将dockerfile中修改到shell中，可能无法`chown -R nobody $CLASH_DIR`中挂载的config.yaml权限
 - 如果没有给docker privileged权限将无法修改本机sys属性，可能会遇到ip无法转发、无法代理docker bridge流量、tun接口rp_filter反射路由的问题。如果清楚clash工作原理，可以仅配置`cap_add: - NET_ADMIN`
-- 使用`nobody`启动clash区分clash流量循环
+- 使用`nobody`启动以避免clash流量循环
 - 非tun模式对本机不支持udp代理，但本机docker支持udp代理
 - 仅支持linux host模式，性能与原生linux应用一致
-- 当前在rasp4 arm64与wsl2 amd64平台测试过工作正常
+- 当前在ras pi4 arm64与wsl2 amd64平台测试过工作正常
 - docker hub由github actions自动构建
 
 links:
 
 - [git repo](https://github.com/NavyD/docker-clash)
-- [docker hub repo](https://hub.docker.com/repository/docker/navyd/clash)
+- [docker hub repo](https://hub.docker.com/r/navyd/clash)
