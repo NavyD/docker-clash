@@ -2,8 +2,12 @@ name: CI to Docker Hub
 
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches:
+      - master
+    paths:
+      - '.github/workflows/**'
+      - '**.sh'
+      - Dockerfile
 
 jobs:
   build:
