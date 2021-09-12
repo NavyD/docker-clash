@@ -2,18 +2,18 @@ FROM dreamacro/clash-premium:2021.07.03
 
 LABEL maintainer = "dhjnavyd@gmail.com"
 
-ENV RUN_USER=nobody CLASH_DIR=/clash
+ENV RUN_USER=nobody CLASH_DIR=/clash UI_DIR=/ui
 
 # yacd ui
 RUN wget -O yacd.zip 'https://github.com/haishanh/yacd/archive/gh-pages.zip' \
-    && mkdir /ui \
-    && unzip yacd.zip -d /ui \
-    && mv /ui/yacd-gh-pages/* /ui \
-    && rm -rf /ui/yacd-gh-pages \
+    && mkdir $UI_DIR \
+    && unzip yacd.zip -d $UI_DIR \
+    && mv $UI_DIR/yacd-gh-pages/* $UI_DIR \
+    && rm -rf $UI_DIR/yacd-gh-pages \
     && rm -rf yacd.zip \
     # && sed -i 's/dl-cdn.alpinelinux.org/mirrors.tuna.tsinghua.edu.cn/g' /etc/apk/repositories
     # install
-    && apk add --no-cache bash iptables sudo libcap \
+    && apk add --no-cache bash iptables sudo libcap strace \
     # clash user settings
     && mv /clash /usr/bin \
     && chown $RUN_USER /usr/bin/clash \
@@ -23,4 +23,4 @@ RUN wget -O yacd.zip 'https://github.com/haishanh/yacd/archive/gh-pages.zip' \
 
 COPY entrypoint.sh /
 
-ENTRYPOINT [ "bash", "/entrypoint.sh" ]
+ENTRYPOINT [ "/entrypoint.sh" ]

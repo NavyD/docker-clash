@@ -195,6 +195,8 @@ setup_redir() {
 }
 
 clean() {
+    killall -9 strace
+
     echo "cleaning iptables"
 
     # delete routing table and fwmark
@@ -221,32 +223,42 @@ clean() {
     iptables -t mangle -D PREROUTING -j CLASH_EXTERNAL 2> /dev/null
     iptables -t mangle -F CLASH_EXTERNAL 2> /dev/null
     iptables -t mangle -X CLASH_EXTERNAL 2> /dev/null
+
+    if [ -n "$CLASH_PID" ]; then
+        echo "killing clash $CLASH_PID"
+        kill -9 "$CLASH_PID"
+    fi
 }
 
-# 在clash正常启动后返回，设置变量CLASH_PID。从clash输出中判断dns或restful api监听启动
-start_clash() {
-    echo "starting clash with $RUN_USER"
-    touch "$CLASH_DIR"/temp.log
-    sudo -u "$RUN_USER" clash -d "$CLASH_DIR" | tee "$CLASH_DIR/temp.log" > /dev/null &
-
-    CLASH_PID=$!
-    echo "the running clash pid is $CLASH_PID"
-
-    tail -f "$CLASH_DIR"/temp.log | while read -r line
-    do 
-        echo "$line"
-        if echo "$line" | grep "listening at" &> /dev/null; then
-            echo "clash has started at line: $line"
-            killall tail
-            break
-        fi
+sync_cache() {
+    count=0
+    while true; do
+        echo "sync $((count+=1))"
+        sync;
+        sleep 5
     done
 }
 
-if [ "$ENABLED" = true ]; then
-    init_env
-    clean
-    start_clash
+# 在clash正常启动后返回，设置变量CLASH_PID。从clash输出中判断dns或restful api监听启动
+setup_started() {
+    if [ -z "$CLASH_PID" ]; then
+        echo 'not found CLASH_PID'
+        exit 1
+    fi
+
+    sync_cache &
+
+    echo "checking clash pid: $CLASH_PID"
+    strace -P "$(readlink /proc/"$CLASH_PID"/fd/1)" -t -e trace=write -e signal=none -s 1000 -X raw -p "$CLASH_PID" -y 2>&1 | while read -r line; do
+        echo "old: $line"
+        # line=$(sed -n -r 's/^write\([0-9]+,\s*"(.+)",\s*[0-9]+\)\s*=\s*[[:digit:]]+$/\1/p' <<< "$line")
+        # echo "dumping line: $line"
+        if [[ $line == *"listening at"* ]]; then
+            echo "clash has started at line: $line"
+            break
+        fi
+    done
+
     if [ "$TUN_ENABLED" = true ]; then
         setup_tun
     else
@@ -259,13 +271,20 @@ if [ "$ENABLED" = true ]; then
     else
         echo "failed to enable ip forward: $(sysctl net.ipv4.ip_forward)"
     fi
+}
+
+if [ "$ENABLED" = true ]; then
+    init_env
+    clean
 
     # 等待clash退出清理
     trap clean SIGTERM
 
-    # 在sh后台输出日志
-    tail -f "$CLASH_DIR"/temp.log &
-    
+    sudo -u "$RUN_USER" clash -d "$CLASH_DIR" &
+    CLASH_PID=$!
+    echo "the running clash pid is $CLASH_PID"
+
+    setup_started
     echo "waiting clash $CLASH_PID"
     wait $CLASH_PID
 else
