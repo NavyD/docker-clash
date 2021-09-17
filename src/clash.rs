@@ -1,13 +1,11 @@
-use std::{convert::TryFrom, fs::File, io::BufReader, path::Path, str::FromStr};
+use std::{fs::File, io::BufReader, path::Path, str::FromStr};
 
-use anyhow::{anyhow, bail, Error, Result};
-use cmd_lib::*;
-use log::*;
+use anyhow::{Error, Result};
 use macros::FillFn;
 use serde::Deserialize;
 use structopt::StructOpt;
 
-#[derive(Debug, Clone, Deserialize, StructOpt, Default, FillFn)]
+#[derive(Debug, Clone, Deserialize, StructOpt, Default, FillFn, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case", default)]
 pub struct Config {
     #[structopt(long)]
@@ -29,7 +27,7 @@ pub struct Config {
     pub tun: Tun,
 }
 
-#[derive(Debug, Clone, Deserialize, StructOpt, Default)]
+#[derive(Debug, Clone, Deserialize, StructOpt, Default, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub struct Tun {
     #[structopt(long = "--tun-enable")]

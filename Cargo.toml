@@ -24,5 +24,8 @@ env_logger = "0.9"
 users = "0.11"
 cmd_lib = "1.1"
 ctor = "0.1"
+cmd_lib_core = "0.4"
+getset = "0.1"
+derive_builder = "0.10"
 
 macros = { version = "0.1.0", path = "./macros" }

@@ -1,13 +1,8 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use proc_macro2::{Ident, Span};
-use quote::{format_ident, quote};
-use syn::{
-    parse, parse_macro_input,
-    punctuated::Punctuated,
-    token::{Colon2, Comma},
-    Data, DataStruct, DeriveInput, Field, Fields, PathArguments, PathSegment, Type,
-};
+use quote::quote;
+use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Fields, Type};
 
 // extern crate proc_macro;
 // use proc_macro::TokenStream;
@@ -95,15 +90,4 @@ pub fn derive_fill_fn(input: TokenStream) -> TokenStream {
             }
         }
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        // make_answer!();
-        // assert_eq!(2 + 2, 4);
-    }
 }

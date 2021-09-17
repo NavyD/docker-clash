@@ -1,63 +1,48 @@
-use std::collections::HashSet;
-use std::ffi::OsString;
-use std::fs::File;
-use std::io::BufReader;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use std::{env, ops::Deref};
 
-use anyhow::{anyhow, bail, Error, Result};
+use anyhow::{anyhow, bail, Result};
 use cmd_lib::*;
-use docker_clash::sys;
-use docker_clash::{clash::Config, CRATE_NAME, CRATE_VERSION};
-use iptables::IPTables;
+use cmd_lib_core::run_fun;
+use docker_clash::{
+    clash::Config,
+    sys::{self, IptInfoBuilder},
+    CRATE_NAME,
+};
 use log::*;
-use macros::*;
 use once_cell::sync::Lazy;
-use serde::{Deserialize, Deserializer, Serialize};
-use serde_yaml::Value;
 use structopt::StructOpt;
-use users::{get_current_uid, get_user_by_name, get_user_by_uid, User};
 use which::which;
 
 fn main() -> Result<()> {
-    env_logger::builder()
-        .filter_level(LevelFilter::Warn)
-        .filter_module(&CRATE_NAME, LevelFilter::Trace)
-        .init();
-    let mut opt = Opt::from_args();
-    opt.init()?;
-    // 1. parse yaml
+    let opt = Opt::from_args();
+    init_log(opt.verbose)?;
+    opt.check_env()?;
+    if opt.clean {
+        opt.check_clean()?;
+    } else {
+        opt.check_clash_started()?;
+    }
 
-    // 2. init env
+    let ipt = IptInfoBuilder::default()
+        .tun_name(opt.ipt_config.tun_name.clone())
+        .mark_id(opt.ipt_config.mark_id)
+        .table_id(opt.ipt_config.table_id)
+        .local_ipset(DEFAULT_LOCAL_IPSET_NAME.to_string())
+        .clash_config(opt.config.clone())
+        .build()?;
 
-    // clean env
-
-    // run clash
-
-    // do iptables
-
-    // wait clash
+    if opt.clean {
+        ipt.clean();
+    } else {
+        ipt.config(opt.pid.expect("not found pid"))?;
+    }
     Ok(())
 }
-
-#[derive(StructOpt, Debug, Clone)]
-struct Opt {
-    /// tun device name
-    #[structopt(long, default_value = "utun")]
-    tun_name: String,
-
-    /// table id
-    #[structopt(long, default_value = &DEFAULT_TABLE_ID)]
-    table_id: u32,
-
-    /// mark id.
-    #[structopt(long, default_value = &DEFAULT_MARK_ID)]
-    mark_id: u32,
-
-    /// user id or name for running clash. default current user.
-    #[structopt(short, long, parse(try_from_str=parse_user), default_value = "")]
-    user: User,
+#[derive(StructOpt, Debug, Clone, PartialEq, Eq, Default)]
+pub struct Opt {
+    #[structopt(flatten)]
+    ipt_config: IptConfig,
 
     /// clash config path of config.yaml. if not specified, use other options
     #[structopt(short = "-f", long)]
@@ -69,75 +54,67 @@ struct Opt {
     #[structopt(short, long)]
     pid: Option<u32>,
 
-    #[structopt(long)]
+    #[structopt(short, long)]
     clean: bool,
+
+    #[structopt(short, parse(from_occurrences))]
+    verbose: u8,
 }
 
-static DEFAULT_MARK_ID: Lazy<String> = Lazy::new(|| 0x162.to_string());
-static DEFAULT_TABLE_ID: &Lazy<String> = &DEFAULT_MARK_ID;
-
-/// 解析uid或username转换为user。空字符串将解析为当前用户
-fn parse_user(user: &str) -> Result<User> {
-    if user.is_empty() {
-        get_user_by_uid(get_current_uid())
-    } else {
-        user.parse::<u32>()
-            .map(get_user_by_uid)
-            .unwrap_or_else(|_| get_user_by_name(user))
+/// 使用`-vvvvv`最多5个v启用Error->Trace的日志级别
+fn init_log(verbose: u8) -> Result<()> {
+    if verbose > 5 {
+        bail!("invalid arg: {} > 5 number of verbose", verbose);
     }
-    .ok_or_else(|| anyhow!("not found user for {}", user))
+    let level: log::LevelFilter = unsafe { std::mem::transmute((verbose) as usize) };
+    env_logger::builder()
+        .filter_level(LevelFilter::Error)
+        .filter_module("cmd_lib::process", LevelFilter::Off)
+        .filter_module(&CRATE_NAME, level)
+        .init();
+    Ok(())
+}
+
+static DEFAULT_IPT: Lazy<IptConfig> = Lazy::new(Default::default);
+static DEFAULT_MARK_ID: Lazy<String> = Lazy::new(|| DEFAULT_IPT.mark_id.to_string());
+static DEFAULT_TABLE_ID: Lazy<String> = Lazy::new(|| DEFAULT_IPT.table_id.to_string());
+static DEFAULT_LOCAL_IPSET_NAME: &str = "local_net_clash";
+
+#[derive(StructOpt, Debug, Clone, PartialEq, Eq)]
+struct IptConfig {
+    /// tun device name
+    #[structopt(long, default_value = &DEFAULT_IPT.tun_name)]
+    pub tun_name: String,
+
+    /// table id
+    #[structopt(long, default_value = &DEFAULT_TABLE_ID)]
+    pub table_id: u32,
+
+    /// mark id.
+    #[structopt(long, default_value = &DEFAULT_MARK_ID)]
+    pub mark_id: u32,
+}
+
+impl Default for IptConfig {
+    fn default() -> Self {
+        Self {
+            tun_name: "utun".to_string(),
+            table_id: 0x162,
+            mark_id: 0x162,
+        }
+    }
 }
 
 impl Opt {
-    /// check env, init config, check if clash is started
-    fn init(&mut self) -> Result<()> {
-        self.check_env()?;
-
-        // filling config from config file
-        if let Some(path) = &self.config_path {
-            info!("loading config from {:?}", path);
-            let clash_config = Config::try_from_path(path)?;
-            trace!("loaded config: {:?}", clash_config);
-            self.config.fill_if_some(clash_config);
-        }
-        if self.pid.is_none() {
-            self.pid = Some(self.get_pid()?);
-        }
-
-        // check if clash is started
-        self.check_clash_started()?;
-        Ok(())
-    }
-
-    /// 返回pid。如果未指定pid则从可用的一个config.port找出对应的pid
-    fn get_pid(&self) -> Result<u32> {
-        if let Some(pid) = self.pid {
-            return Ok(pid);
-        }
-        let config = &self.config;
-        trace!("looking for a port from config: {:?}", config);
-        let port = config
-            .port
-            .or(config.mixed_port)
-            .or(config.redir_port)
-            .or(config.socks_port)
-            .ok_or_else(|| {
-                error!("not found ports in config: {:?}", config);
-                anyhow!("not found any ports")
-            })?;
-        debug!("looking for pid by port: {}", port);
-        sys::get_pid_by_port(port).map_err(|e| anyhow!("not found pid by port {}: {}", port, e))
-    }
-
     /// 检查clash配置中的所有端口是否被绑定 且 所有端口对应的pid是否一致
     fn check_clash_started(&self) -> Result<()> {
-        let config = &self.config;
+        let config = &self.get_config()?;
         let pid = self.get_pid()?;
         let port_enabled = |port: Option<u16>| {
             if let Some(port) = port {
                 trace!("checking if port {} is available", port);
                 let addr = format!("127.0.0.1:{}", port);
-                // 绑定了端口表示clash没有启用
+                // 检查端口是否被占用 绑定了端口表示clash没有启用
                 let enabled = if let Err(e) = TcpListener::bind(&addr) {
                     trace!(
                         "checking whether the pids of the port {} are consistent: {}",
@@ -184,8 +161,65 @@ impl Opt {
     }
 
     fn check_env(&self) -> Result<()> {
-        // todo!()
+        info!("checking dependencies info");
+        debug!("sh path: {:?}", which("sh")?);
+        debug!("lsof version: {}", run_fun!(sh -c "lsof -v 2>&1")?);
+        // cargo fmt error: run_fun!(ps --version) -> run_fun!(ps - -version)?)
+        debug!("ps version: {}", run_fun("ps --version")?);
+        debug!("iptables version: {}", run_fun("iptables --version")?);
+        debug!("ip version: {}", run_fun("ip -V")?);
+        debug!("ipset version: {}", run_fun!(ipset version)?);
         Ok(())
+    }
+
+    fn check_clean(&self) -> Result<()> {
+        if !self.clean {
+            return Ok(());
+        }
+        let new = Opt {
+            clean: self.clean,
+            verbose: self.verbose,
+            ipt_config: self.ipt_config.clone(),
+            ..Default::default()
+        };
+        if self != &new {
+            // error!("");
+            bail!("invalid arguments for clean");
+        }
+        Ok(())
+    }
+
+    /// filling config from config file and self.config
+    fn get_config(&self) -> Result<Config> {
+        let mut config = self.config.clone();
+        // filling config from config file
+        if let Some(path) = &self.config_path {
+            info!("loading config from {:?}", path.canonicalize()?);
+            let clash_config = Config::try_from_path(path)?;
+            trace!("loaded config: {:?}", clash_config);
+            config.fill_if_some(clash_config);
+        }
+        Ok(config)
+    }
+
+    /// 返回pid。如果未指定pid则从可用的一个config.port找出对应的pid
+    fn get_pid(&self) -> Result<u32> {
+        if let Some(pid) = self.pid {
+            return Ok(pid);
+        }
+        let config = &self.config;
+        trace!("looking for a port from config: {:?}", config);
+        let port = config
+            .port
+            .or(config.mixed_port)
+            .or(config.socks_port)
+            .or(config.redir_port)
+            .ok_or_else(|| {
+                error!("not found ports in config: {:?}", config);
+                anyhow!("not found any ports")
+            })?;
+        debug!("looking for pid by port: {}", port);
+        sys::get_pid_by_port(port).map_err(|e| anyhow!("not found pid by port {}: {}", port, e))
     }
 }
 
@@ -207,28 +241,10 @@ mode: rule"#
             .parse::<Config>()
             .unwrap();
         Opt {
-            clean: false,
             config,
-            config_path: None,
-            pid: None,
-            user: parse_user("").unwrap(),
-            mark_id: DEFAULT_MARK_ID.parse().unwrap(),
-            table_id: DEFAULT_TABLE_ID.parse().unwrap(),
-            tun_name: "utun".to_string(),
+            ..Default::default()
         }
     });
-
-    #[cfg(test)]
-    #[ctor::ctor]
-    fn init() {
-        INIT.call_once(|| {
-            env_logger::builder()
-                .is_test(true)
-                .filter_level(LevelFilter::Error)
-                .filter_module(&CRATE_NAME, LevelFilter::Debug)
-                .init();
-        });
-    }
 
     #[ignore]
     #[test]
