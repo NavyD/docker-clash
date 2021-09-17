@@ -6,7 +6,7 @@ use cmd_lib::*;
 use cmd_lib_core::run_fun;
 use docker_clash::{
     clash::Config,
-    sys::{self, IptInfoBuilder},
+    sys::{self, get_user_by_pid, IptInfoBuilder},
     CRATE_NAME,
 };
 use log::*;
@@ -15,12 +15,14 @@ use structopt::StructOpt;
 use which::which;
 
 fn main() -> Result<()> {
-    let opt = Opt::from_args();
+    let mut opt = Opt::from_args();
     init_log(opt.verbose)?;
     opt.check_env()?;
     if opt.clean {
         opt.check_clean()?;
     } else {
+        opt.load_config()?;
+        opt.load_clash_pid()?;
         opt.check_clash_started()?;
     }
 
@@ -34,8 +36,12 @@ fn main() -> Result<()> {
 
     if opt.clean {
         ipt.clean();
-    } else {
-        ipt.config(opt.pid.expect("not found pid"))?;
+        return Ok(());
+    }
+    let user = get_user_by_pid(opt.pid.expect("not found pid"))?;
+    if let Err(e) = ipt.config(user.uid()) {
+        ipt.clean();
+        return Err(e);
     }
     Ok(())
 }
@@ -68,7 +74,7 @@ fn init_log(verbose: u8) -> Result<()> {
     }
     let level: log::LevelFilter = unsafe { std::mem::transmute((verbose) as usize) };
     env_logger::builder()
-        .filter_level(LevelFilter::Error)
+        .filter_level(LevelFilter::Warn)
         .filter_module("cmd_lib::process", LevelFilter::Off)
         .filter_module(&CRATE_NAME, level)
         .init();
@@ -108,8 +114,7 @@ impl Default for IptConfig {
 impl Opt {
     /// 检查clash配置中的所有端口是否被绑定 且 所有端口对应的pid是否一致
     fn check_clash_started(&self) -> Result<()> {
-        let config = &self.get_config()?;
-        let pid = self.get_pid()?;
+        let pid = self.pid.expect("not found pid");
         let port_enabled = |port: Option<u16>| {
             if let Some(port) = port {
                 trace!("checking if port {} is available", port);
@@ -148,6 +153,14 @@ impl Opt {
                 true
             }
         };
+        let config = &self.config;
+        if config.redir_port.is_none() && !config.tun.enable.unwrap_or(false) {
+            error!(
+                "clash config does not configure the redir port and tun disabled {:?}",
+                config.tun.enable
+            );
+            bail!("clash config does not open the redir port");
+        }
         if port_enabled(config.port)
             && port_enabled(config.mixed_port)
             && port_enabled(config.redir_port)
@@ -169,6 +182,11 @@ impl Opt {
         debug!("iptables version: {}", run_fun("iptables --version")?);
         debug!("ip version: {}", run_fun("ip -V")?);
         debug!("ipset version: {}", run_fun!(ipset version)?);
+        if let Err(e) =
+            run_cmd!(sh -c "find /lib/modules/$(uname -r) -type f -name 'xt_TPROXY.ko*'")
+        {
+            warn!("TPROXY is not supported: {}", e);
+        }
         Ok(())
     }
 
@@ -190,22 +208,21 @@ impl Opt {
     }
 
     /// filling config from config file and self.config
-    fn get_config(&self) -> Result<Config> {
-        let mut config = self.config.clone();
+    fn load_config(&mut self) -> Result<()> {
         // filling config from config file
         if let Some(path) = &self.config_path {
             info!("loading config from {:?}", path.canonicalize()?);
             let clash_config = Config::try_from_path(path)?;
             trace!("loaded config: {:?}", clash_config);
-            config.fill_if_some(clash_config);
+            self.config.fill_if_some(clash_config);
         }
-        Ok(config)
+        Ok(())
     }
 
     /// 返回pid。如果未指定pid则从可用的一个config.port找出对应的pid
-    fn get_pid(&self) -> Result<u32> {
-        if let Some(pid) = self.pid {
-            return Ok(pid);
+    fn load_clash_pid(&mut self) -> Result<()> {
+        if self.pid.is_some() {
+            return Ok(());
         }
         let config = &self.config;
         trace!("looking for a port from config: {:?}", config);
@@ -219,7 +236,11 @@ impl Opt {
                 anyhow!("not found any ports")
             })?;
         debug!("looking for pid by port: {}", port);
-        sys::get_pid_by_port(port).map_err(|e| anyhow!("not found pid by port {}: {}", port, e))
+        self.pid = Some(
+            sys::get_pid_by_port(port)
+                .map_err(|e| anyhow!("not found pid by port {}: {}", port, e))?,
+        );
+        Ok(())
     }
 }
 
