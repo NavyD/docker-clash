@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Result};
 use cmd_lib::*;
-use cmd_lib_core::run_fun;
 use docker_clash::{
     clash::Config,
     sys::{self, get_user_by_pid, IptInfoBuilder},
@@ -178,9 +177,9 @@ impl Opt {
         debug!("sh path: {:?}", which("sh")?);
         debug!("lsof version: {}", run_fun!(sh -c "lsof -v 2>&1")?);
         // cargo fmt error: run_fun!(ps --version) -> run_fun!(ps - -version)?)
-        debug!("ps version: {}", run_fun("ps --version")?);
-        debug!("iptables version: {}", run_fun("iptables --version")?);
-        debug!("ip version: {}", run_fun("ip -V")?);
+        debug!("ps version: {}", run_fun! {ps --version}?);
+        debug!("iptables version: {}", run_fun! {iptables --version}?);
+        debug!("ip version: {}", run_fun! {ip -V}?);
         debug!("ipset version: {}", run_fun!(ipset version)?);
         if let Err(e) =
             run_cmd!(sh -c "find /lib/modules/$(uname -r) -type f -name 'xt_TPROXY.ko*'")
