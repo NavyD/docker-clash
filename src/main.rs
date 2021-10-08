@@ -1,13 +1,14 @@
+use std::fs::{read_to_string, FileType};
 use std::net::TcpListener;
 use std::path::PathBuf;
 
 use anyhow::{anyhow, bail, Result};
-use cmd_lib::*;
-use docker_clash::{
+use clashutil::{
     clash::Config,
     sys::{self, get_user_by_pid, IptInfoBuilder},
     CRATE_NAME,
 };
+use cmd_lib::*;
 use log::*;
 use once_cell::sync::Lazy;
 use structopt::StructOpt;
@@ -16,14 +17,7 @@ use which::which;
 fn main() -> Result<()> {
     let mut opt = Opt::from_args();
     init_log(opt.verbose)?;
-    opt.check_env()?;
-    if opt.clean {
-        opt.check_clean()?;
-    } else {
-        opt.load_config()?;
-        opt.load_clash_pid()?;
-        opt.check_clash_started()?;
-    }
+    opt.init()?;
 
     let ipt = IptInfoBuilder::default()
         .tun_name(opt.ipt_config.tun_name.clone())
@@ -39,8 +33,9 @@ fn main() -> Result<()> {
     }
     let user = get_user_by_pid(opt.pid.expect("not found pid"))?;
     if let Err(e) = ipt.config(user.uid()) {
+        error!("config failed: {}", e);
         ipt.clean();
-        return Err(e);
+        bail!("config failed")
     }
     Ok(())
 }
@@ -111,6 +106,43 @@ impl Default for IptConfig {
 }
 
 impl Opt {
+    pub fn init(&mut self) -> Result<()> {
+        self.check_env()?;
+        if self.clean {
+            self.check_clean()?;
+            return Ok(());
+        }
+
+        self.load_config()?;
+        let tproxy_mod_base_path = format!(
+            "/lib/modules/{}",
+            // kernel version: uname -r, `5.10.60.1-microsoft-standard-WSL2`
+            read_to_string("/proc/sys/kernel/osrelease")?
+        );
+        // check tproxy for redir
+        if self.config.tun.enable == Some(false)
+            && !walkdir::WalkDir::new(&tproxy_mod_base_path)
+                .follow_links(true)
+                .into_iter()
+                .filter_map(|e| e.ok())
+                .any(|dir| {
+                    dir.file_name()
+                        .to_str()
+                        .unwrap()
+                        .starts_with("xt_TPROXY.ko")
+                })
+        {
+            error!(
+                "not found xt_TPROXY.ko in {} for config: {:?}",
+                tproxy_mod_base_path, self.config
+            );
+            bail!("no tproxy supported for tun.enable=false")
+        }
+        self.load_clash_pid()?;
+        self.check_clash_started()?;
+        Ok(())
+    }
+
     /// 检查clash配置中的所有端口是否被绑定 且 所有端口对应的pid是否一致
     fn check_clash_started(&self) -> Result<()> {
         let pid = self.pid.expect("not found pid");
@@ -175,17 +207,12 @@ impl Opt {
     fn check_env(&self) -> Result<()> {
         info!("checking dependencies info");
         debug!("sh path: {:?}", which("sh")?);
-        debug!("lsof version: {}", run_fun!(sh -c "lsof -v 2>&1")?);
+        // debug!("lsof version: {}", run_fun!(sh -c "lsof -v 2>&1")?);
         // cargo fmt error: run_fun!(ps --version) -> run_fun!(ps - -version)?)
-        debug!("ps version: {}", run_fun! {ps --version}?);
+        // debug!("ps version: {}", run_fun! {ps --version}?);
         debug!("iptables version: {}", run_fun! {iptables --version}?);
         debug!("ip version: {}", run_fun! {ip -V}?);
         debug!("ipset version: {}", run_fun!(ipset version)?);
-        if let Err(e) =
-            run_cmd!(sh -c "find /lib/modules/$(uname -r) -type f -name 'xt_TPROXY.ko*'")
-        {
-            warn!("TPROXY is not supported: {}", e);
-        }
         Ok(())
     }
 

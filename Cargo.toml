@@ -1,5 +1,5 @@
 [package]
-name = "docker-clash"
+name = "clashutil"
 version = "0.1.0"
 authors = ["navyd <dhjnavyd@gmail.com>"]
 edition = "2018"
@@ -26,5 +26,7 @@ cmd_lib = "1.1"
 ctor = "0.1"
 getset = "0.1"
 derive_builder = "0.10"
+procfs = "0.10"
+walkdir = "2.3"
 
 macros = { version = "0.1.0", path = "./macros" }

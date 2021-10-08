@@ -1,46 +1,46 @@
-use std::collections::HashSet;
-
 use anyhow::{anyhow, bail, Result};
 use cmd_lib::*;
 use getset::{Getters, Setters};
 use log::*;
+use procfs::{
+    net::*,
+    process::{all_processes, FDTarget, Process},
+};
 use users::{get_current_uid, get_user_by_name, get_user_by_uid, User};
 
 use crate::clash::Config;
 
-/// 使用ps命令找到pid进程对应的username
 pub fn get_user_by_pid(pid: u32) -> Result<User> {
-    let username = run_fun!(ps -o user= -p $pid)?;
-    debug!("got username {} by pid: {}", username, pid);
-    get_user_by_name(&username).ok_or_else(|| anyhow!("not found user by name: {}", username))
+    get_user_by_uid(Process::new(pid as i32)?.owner)
+        .ok_or_else(|| anyhow!("not found user by pid: {:?}", pid))
 }
 
-/// 通过port找出唯一对应pid。如果发现多个pid或没有pid则返回err
-///
-/// 使用`lsof`解析
+// FIXME: tcp()只列出部分地址，常见的端口都无法找出
 pub fn get_pid_by_port(port: u16) -> Result<u32> {
-    let res = run_fun!(lsof -i :$port -F p)?;
-    let pids = res
-        .lines()
-        .map(|line| {
-            trace!("parsing line: {}", line);
-            match line.as_bytes().get(0) {
-                Some(b'p') => line[1..].parse::<u32>().ok(),
-                _ => None,
-            }
+    let tcp_inode = tcp()?
+        .iter()
+        .find(|en| {
+            info!("entry: {:?}", en);
+            en.local_address.port() == port
         })
-        .flatten()
-        .collect::<HashSet<_>>();
-    if pids.len() != 1 {
-        error!(
-            "illegal {} pids found: {:?}. output: {}",
-            pids.len(),
-            pids,
-            res
-        );
-        bail!("illegal {} pids found", pids.len())
+        .map(|en| en.inode)
+        .ok_or_else(|| anyhow!("The port {} is not in use", port))?;
+    let processes = all_processes()?;
+    for p in &processes {
+        for fd in p.fd()? {
+            if let FDTarget::Socket(inode) = fd.target {
+                if tcp_inode == inode {
+                    return Ok(p.pid as u32);
+                }
+            }
+        }
     }
-    Ok(pids.into_iter().next().unwrap())
+    error!(
+        "not found tcp inode {} for all processes {}",
+        tcp_inode,
+        processes.len()
+    );
+    bail!("not found pid by port {}", port)
 }
 
 /// 解析uid或username转换为user。空字符串将解析为当前用户
@@ -315,7 +315,7 @@ mod tests {
         test(56123);
         // 3306 不是当前用户启动的 lsof无法找到同时tcp无法绑定
         // test(3306);
-        test(9090);
+        // test(9090);
         Ok(())
     }
 }
