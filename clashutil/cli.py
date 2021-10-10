@@ -1,23 +1,50 @@
-import os
-from typing import Tuple
-import click
-import psutil
-from tenacity.wait import wait_exponential
-import yaml
-from pathlib import Path
-from colorama.ansi import Style
-from os import listdir, environ
 import logging
+import os
 import signal
-from clashutil.clash import Clash, ClashException
-import colorama
-from sys import stderr
-from subprocess import Popen
-from tenacity import retry, retry_if_exception_type, before_log, after_log, stop_after_delay
-from shutil import which, chown
 import time
+from os import environ, listdir
+from pathlib import Path
+from shutil import chown, which
+from subprocess import Popen
+from sys import stderr
+from typing import Tuple
+
+import click
+import colorama
+import psutil
+import yaml
+from colorama.ansi import Style
+from tenacity import (after_log, before_log, retry, retry_if_exception_type,
+                      stop_after_delay)
+from tenacity.wait import wait_exponential
+
+from clashutil.clash import Clash, ClashException
 
 log = logging.getLogger(__name__)
+
+
+@click.command()
+@click.option('-c', '--clean', default=False, is_flag=True)
+@click.option('-f', '--config-path', type=Path)
+@click.option('-p', '--clash-pid', type=int)
+@click.option('-v', '--verbose', count=True)
+@click.option('-b', '--clash-bin', type=Path, help='start the clash')
+@click.option('-d', '--clash-home', type=Path)
+@click.option('-D', '--detach', is_flag=True)
+@click.option('-u', '--user', type=str)
+def main(verbose, **kwargs):
+    colorama.init()
+    _init_log(verbose)
+
+    cli = CliProgram()
+    try:
+        cli.run(**kwargs)
+        return
+    except ClashException as e:
+        eprint(f"failed to check if clash exists: {e}")
+    except CliException as e:
+        eprint(f"failed to check cli: {e}")
+    cli.clean()
 
 
 class CliProgram(object):
@@ -94,30 +121,6 @@ class CliProgram(object):
 
         signal.signal(signal.SIGINT, signal_handler)
         signal.signal(signal.SIGTERM, signal_handler)
-
-
-@click.command()
-@click.option('-c', '--clean', default=False, is_flag=True)
-@click.option('-f', '--config-path', type=Path)
-@click.option('-p', '--clash-pid', type=int)
-@click.option('-v', '--verbose', count=True)
-@click.option('-b', '--clash-bin', type=Path, help='start the clash')
-@click.option('-d', '--clash-home', type=Path)
-@click.option('-D', '--detach', is_flag=True)
-@click.option('-u', '--user', type=str)
-def main(verbose, **kwargs):
-    colorama.init()
-    _init_log(verbose)
-
-    cli = CliProgram()
-    try:
-        cli.run(**kwargs)
-        return
-    except ClashException as e:
-        eprint(f"failed to check if clash exists: {e}")
-    except CliException as e:
-        eprint(f"failed to check cli: {e}")
-    cli.clean()
 
 
 @retry(

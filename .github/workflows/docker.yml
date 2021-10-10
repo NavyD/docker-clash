@@ -3,11 +3,7 @@ name: CI to Docker Hub
 on:
   push:
     branches:
-      - master
-    paths:
-      - ".github/workflows/**"
-      - "**.sh"
-      - Dockerfile
+      - main
 
 jobs:
   build:

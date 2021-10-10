@@ -1,9 +1,10 @@
-from typing import Dict, List, Set
-from psutil import Process, net_connections
+import logging
 from os import walk
 from pathlib import Path
 from subprocess import CalledProcessError, CompletedProcess, run
-import logging
+from typing import Dict, List, Set
+
+from psutil import Process, net_connections
 
 log = logging.getLogger(__name__)
 
