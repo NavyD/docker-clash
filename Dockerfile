@@ -104,11 +104,15 @@ RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/inst
 WORKDIR $PYSETUP_PATH
 # lock文件可能需要主动lock依赖如`poetry lock`
 COPY poetry.lock pyproject.toml ./
-COPY clashutil ./clashutil
 # install runtime deps - uses $POETRY_VIRTUALENVS_IN_PROJECT internally
+RUN poetry install --no-dev
+
+FROM builder-base as builder-dev
+WORKDIR $PYSETUP_PATH
+COPY clashutil ./clashutil
 RUN poetry install --no-dev
 
 # `production` image used for runtime
 FROM python-base as production
-COPY --from=builder-base $PYSETUP_PATH $PYSETUP_PATH
+COPY --from=builder-dev $PYSETUP_PATH $PYSETUP_PATH
 ENTRYPOINT [ "clashutil" ]

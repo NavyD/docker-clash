@@ -13,8 +13,8 @@ from clashutil.clash import Clash, ClashException
 import colorama
 from sys import stderr
 from subprocess import Popen
-from tenacity import retry, retry_if_exception_type, before_log, after_log
-from shutil import which
+from tenacity import retry, retry_if_exception_type, before_log, after_log, stop_after_delay
+from shutil import which, chown
 import time
 
 log = logging.getLogger(__name__)
@@ -31,8 +31,10 @@ class CliProgram(object):
         self._handle_sig()
 
     def run(self, clash_bin, clash_home, config_path, clash_pid, clean, detach, user):
-        if clash_home and (path := Path(clash_home)) and not path.is_dir():
-            raise CliException(f"{clash_home} is not a dir")
+        if clash_home and (path := Path(clash_home)) and not path.exists():
+            path.mkdir(0o744, parents=True)
+            if user:
+                chown(path, user)
 
         # find config path from multi-localtion
         # 如果path为None则从`.`, `$HOME/.config/.clash/`中找config文件
@@ -119,9 +121,9 @@ def main(verbose, **kwargs):
 
 
 @retry(
-    wait=wait_exponential(multiplier=1, min=1, max=4),
+    wait=wait_exponential(multiplier=1, min=1, max=5),
     retry=retry_if_exception_type(ClashException),
-    # stop=stop_after_attempt(3),
+    stop=stop_after_delay(10),
     after=after_log(log, logging.INFO),
     before=before_log(log, logging.INFO),
     reraise=True,
