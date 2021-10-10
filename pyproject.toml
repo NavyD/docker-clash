@@ -10,6 +10,7 @@ psutil = "^5.8.0"
 click = "^8.0.1"
 PyYAML = "^5.4.1"
 colorama = "^0.4.4"
+tenacity = "^8.0.1"
 
 [tool.poetry.dev-dependencies]
 

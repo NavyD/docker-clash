@@ -2,7 +2,7 @@ from typing import Dict, List, Set
 from psutil import Process, net_connections
 from os import walk
 from pathlib import Path
-from subprocess import CompletedProcess, run
+from subprocess import CalledProcessError, CompletedProcess, run
 import logging
 
 log = logging.getLogger(__name__)
@@ -18,17 +18,34 @@ class Clash:
         mark_id=0x162,
         local_ipset="local_clash_ip_set"
     ):
-        if config is None or len(config) == 0:
-            raise ClashException(f"none or empty config {config}")
-        if pid is None:
-            pid = get_clash_pid_by_ports(
-                config.get("port"),
-                config.get("socks-port"),
-                config.get("redir-port"),
-                config.get("mixed-port"),
-            )
+        self.log = logging.getLogger(__name__)
+        ports = {
+            config.get("port"),
+            config.get("socks-port"),
+            config.get("redir-port"),
+            config.get("mixed-port"),
+        }
+        if not config:
+            raise ClashException("empty config")
+        if not pid:
+            # [Converting list to *args when calling function [duplicate]](https://stackoverflow.com/a/3941529/8566831)
+            pid = get_clash_pid_by_ports(*ports)
 
         self.process = Process(pid)
+
+        # check if port is available for clash pid
+        conns = self.process.connections()
+        unused_ports = set()
+        for port in ports:
+            if not any(conn.laddr.port == port for conn in conns):
+                self.log.debug(f"not found port {port} in clash pid {pid}")
+                unused_ports.add(port)
+        if len(unused_ports) == len(ports):
+            raise ClashException(
+                f"not found any port in {ports} for clash {pid}")
+        elif len(unused_ports) > 0:
+            self.log.warning(
+                f"found unlistened ports {unused_ports}  in clash pid {pid}")
 
         self.config = config
         self.table_id = table_id
@@ -37,7 +54,6 @@ class Clash:
         self.local_ipset = local_ipset
 
         self.uid = self.process.uids().real
-        self.log = logging.getLogger(__name__)
 
     def __str__(self):
         """
@@ -49,6 +65,7 @@ class Clash:
 
     def clean(self):
         self.log.debug("cleaning config for clash")
+        self.process.kill()
         processes = run_cmd(
             f"""
 # delete routing table and fwmark
@@ -141,7 +158,8 @@ sysctl -w net.ipv4.conf.all.rp_filter=0 2> /dev/null
         )
 
     def __config_redir(self):
-        self.log.debug(f"getting redir port in config {self.config}")
+        self.log.debug("getting redir port in config %s",
+                       str(self.config)[:100])
         redir_port = self.config.get(
             "redir-port", self.config.get("mixed-port"))
         if redir_port is None:
@@ -243,21 +261,24 @@ iptables -t "{table}" -A "{chain}" -d 10.0.0.0/8 -j RETURN
         raise ClashException(f"not found xt_TPROXY.ko in {path}")
 
 
-def run_cmd(sh_cmd: str, split_line=True, check=True, capture_output=False, text=True, **kwargs) -> List[CompletedProcess]:
-    res = []
-    if split_line:
-        for line in sh_cmd.splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                log.debug(f"running cmd line: `{line}`")
-                p = run(line, shell=True, capture_output=capture_output,
-                        check=check, text=text, **kwargs)
-                log.debug(f"completed process: {p} for cmd: {line}")
-                res.append(p)
-    else:
-        res.append(
-            run(sh_cmd, shell=True, capture_output=capture_output, check=check, text=text, **kwargs))
-    return res
+def run_cmd(sh_cmd: str, split_line=True, check=True, capture_output=True, text=True, **kwargs) -> List[CompletedProcess]:
+    try:
+        res = []
+        if split_line:
+            for line in sh_cmd.splitlines():
+                line = line.strip()
+                if line and not line.startswith("#"):
+                    log.debug(f"running cmd line: `{line}`")
+                    p = run(line, shell=True, capture_output=capture_output,
+                            check=check, text=text, **kwargs)
+                    log.debug(f"completed process: {p} for cmd: {line}")
+                    res.append(p)
+        else:
+            res.append(
+                run(sh_cmd, shell=True, capture_output=capture_output, check=check, text=text, **kwargs))
+        return res
+    except CalledProcessError as e:
+        raise ClashException(f"failed to execute `{e.cmd}`: {e.stderr}, {e.stdout}, {e.output}")
 
 
 def get_pids_by_port(port: int) -> Set[int]:
@@ -276,16 +297,18 @@ def get_clash_pid(config: Dict) -> int:
 def get_clash_pid_by_ports(*ports) -> int:
     pids = None
     for port in ports:
-        if port is not None:
+        if port:
             cur_pids = get_pids_by_port(port)
             log.debug(
                 f"found cur pids {cur_pids} and pids {pids} for port {port}")
-            if pids is None:
+            if not cur_pids:
+                continue
+            elif not pids:
                 pids = cur_pids
             elif pids != cur_pids:
                 raise ClashException(
                     f"Inconsistent pids: {pids}, cur pids: {cur_pids}")
-    if pids is None:
+    if not pids:
         raise ClashException(f"not found clash pid by ports: {ports}")
     log.info(f"found clash pids {pids}")
     if len(pids) != 1 or None in pids:
