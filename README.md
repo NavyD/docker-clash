@@ -23,18 +23,30 @@ external-ui: /ui
 使用poetry构建
 
 ```bash
+$ clashutil --help
 Usage: clashutil [OPTIONS]
 
+  a clash transparent proxy tool
+
 Options:
-  -c, --clean
-  -f, --config-path PATH
-  -p, --clash-pid INTEGER
-  -v, --verbose
-  -b, --clash-bin PATH     start the clash
-  -d, --clash-home PATH
-  -D, --detach
-  -u, --user TEXT
-  --help
+  --clean                  clear all configuration for clash
+  -f, --config-path PATH   config file of clash. default read config file from
+                           `.`, `$HOME/.config/.clash/`
+  -p, --clash-pid INTEGER  pid of clash. if not specified, find the
+                           corresponding clash process from the configuration
+                           port
+  -v, --verbose            log level. default fatal. level: error: -v to
+                           debug: -vvvv
+  -b, --clash-bin PATH     the name or path of clash binary. if not specified,
+                           the clash process must already exist
+  -d, --clash-home PATH    clash options: -d
+  -D, --detach             exit directly instead of waiting for the clash
+                           process
+  -u, --user TEXT          indicates the user who started the clash process,
+                           the default is the user of the current process
+  -t, --wait-time FLOAT    wait for seconds to check the start of clash. exit
+                           if it timeout  [default: 15]
+  --help                   Show this message and exit.
 ```
 
 ### docker

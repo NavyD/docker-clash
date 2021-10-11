@@ -1,12 +1,13 @@
 import logging
 import os
+import pwd
 import signal
 import time
 from os import environ, listdir
 from pathlib import Path
 from shutil import chown, which
 from subprocess import Popen
-from sys import stderr
+from sys import stderr, stdout
 from typing import Tuple
 
 import click
@@ -23,15 +24,16 @@ from clashutil.clash import Clash, ClashException
 log = logging.getLogger(__name__)
 
 
-@click.command()
-@click.option('-c', '--clean', default=False, is_flag=True)
-@click.option('-f', '--config-path', type=Path)
-@click.option('-p', '--clash-pid', type=int)
-@click.option('-v', '--verbose', count=True)
-@click.option('-b', '--clash-bin', type=Path, help='start the clash')
-@click.option('-d', '--clash-home', type=Path)
-@click.option('-D', '--detach', is_flag=True)
-@click.option('-u', '--user', type=str)
+@click.command(help='a clash transparent proxy tool')
+@click.option('--clean', default=False, is_flag=True, help='clear all configuration for clash')
+@click.option('-f', '--config-path', type=Path, help='config file of clash. default read config file from `.`, `$HOME/.config/.clash/`')
+@click.option('-p', '--clash-pid', type=int, help='pid of clash. if not specified, find the corresponding clash process from the configuration port')
+@click.option('-v', '--verbose', count=True, help='log level. default fatal. level: error: -v to debug: -vvvv')
+@click.option('-b', '--clash-bin', type=Path, help='the name or path of clash binary. if not specified, the clash process must already exist')
+@click.option('-d', '--clash-home', type=Path, help='clash options: -d')
+@click.option('-D', '--detach', is_flag=True, help='exit directly instead of waiting for the clash process')
+@click.option('-u', '--user', type=str, help='indicates the user who started the clash process, the default is the user of the current process')
+@click.option('-t', '--wait-time', type=float, default=15, show_default=True, help='wait for seconds to check the start of clash. exit if it timeout')
 def main(verbose, **kwargs):
     colorama.init()
     _init_log(verbose)
@@ -57,7 +59,7 @@ class CliProgram(object):
         self.clash_pid = None
         self._handle_sig()
 
-    def run(self, clash_bin, clash_home, config_path, clash_pid, clean, detach, user):
+    def run(self, clash_bin, clash_home, config_path, clash_pid, clean, detach, user, wait_time):
         if clash_home and (path := Path(clash_home)) and not path.exists():
             path.mkdir(0o744, parents=True)
             if user:
@@ -66,38 +68,40 @@ class CliProgram(object):
         # find config path from multi-localtion
         # 如果path为None则从`.`, `$HOME/.config/.clash/`中找config文件
         config_path = _find_config_path(
-            config_path, ".", "{}/.config/.clash/".format(environ["HOME"]))
-
-        if not clash_pid:
-            # start clash
-            self.clash_process, self.clash_pid = _try_start_clash(
-                clash_bin, clash_home, user, config_path)
-            self.log.info(
-                f"started clash process {self.clash_process}, pid {self.clash_pid}")
-            clash_pid = self.clash_pid
+            config_path, ".", "{}/.config/.clash/".format(user_home(user)))
 
         # load config
         self.log.info(f"loading config from {config_path}")
         with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 
-        # check clash
-        self.clash = _new_clash_retry(config, clash_pid)
+        # start clash
+        if clash_bin and not clash_pid:
+            self.clash_process, self.clash_pid = try_start_clash(
+                clash_bin, clash_home, user, config_path)
+            self.log.debug(
+                f"started clash process {self.clash_process}, pid {self.clash_pid}")
+            clash_pid = self.clash_pid
+
+        print("checking the clash process")
+        self.clash = new_clash_retry(config, clash_pid, wait_time)
 
         if clean:
             self.clean()
             if not clash_pid:
                 return
 
+        print(f"configuring for clash pid {clash_pid}")
         # config ip for clash
         self.clash.config_net()
 
         if self.clash_process and not detach:
-            self.log.info(f"waiting for clash process {clash_pid}")
+            print(f"waiting for clash process {clash_pid}")
             self.clash_process.wait()
             self.clean()
 
     def clean(self):
+        print("cleaning up configuration")
         self.log.debug(
             f"cleaning clash {self.clash}, clp {self.clash_process}")
         if self.clash_pid:
@@ -123,19 +127,50 @@ class CliProgram(object):
         signal.signal(signal.SIGTERM, signal_handler)
 
 
-@retry(
-    wait=wait_exponential(multiplier=1, min=1, max=5),
-    retry=retry_if_exception_type(ClashException),
-    stop=stop_after_delay(10),
-    after=after_log(log, logging.INFO),
-    before=before_log(log, logging.INFO),
-    reraise=True,
-)
-def _new_clash_retry(config, pid):
-    return Clash(config, pid=pid)
+def user_home(user) -> str:
+    if not user:
+        return environ["HOME"]
+    log.debug(f"finding username for user {user}")
+    try:
+        name = pwd.getpwuid(int(user)).pw_name
+    except ValueError:
+        name = user
+    home = os.path.expanduser(f"~{name}")
+    log.debug(f"found home {home} for username {name}")
+    return home
 
 
-def _try_start_clash(clash_bin, clash_home, user, config_path) -> Tuple[Popen, int]:
+def new_clash_retry(config, clash_pid, wait_time):
+    class my_retry(retry_if_exception_type):
+        def __call__(self, retry_state):
+            if retry_state.outcome.failed:
+                log.info(f"retry: {retry_state}")
+                print(
+                    f"{colorama.Fore.YELLOW}not found clash process in attempts {retry_state.attempt_number}{Style.RESET_ALL}", file=stdout)
+                return self.predicate(retry_state.outcome.exception())
+            else:
+                return False
+
+    @retry(
+        wait=wait_exponential(multiplier=1, min=1, max=3),
+        retry=my_retry(ClashException),
+        stop=stop_after_delay(wait_time),
+        after=after_log(log, logging.DEBUG),
+        before=before_log(log, logging.DEBUG),
+        reraise=True,
+    )
+    def _new(config, pid):
+        return Clash(config, pid=pid)
+
+    try:
+        # check clash
+        return _new(config, clash_pid)
+    except ClashException as e:
+        raise ClashException(
+            f"{e}. retry statistics: {_new.retry.statistics}")
+
+
+def try_start_clash(clash_bin, clash_home, user, config_path) -> Tuple[Popen, int]:
     if not clash_bin:
         return None, None
     clash_bin = which(clash_bin)
@@ -194,6 +229,7 @@ def _find_config_path(*paths) -> Path:
     如果未找到可用的path则抛出异常
     """
     filenames = {"config.yaml", "config.yml"}
+    log.debug(f"finding config files {filenames} in {paths}")
     for p in paths:
         if p is None:
             continue
