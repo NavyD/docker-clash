@@ -30,7 +30,8 @@ ENV PYTHONUNBUFFERED=1 \
     VENV_PATH="/opt/pysetup/.venv" \
     \
     GOSU_VERSION=1.14 \
-    UI_DIR=/ui
+    UI_DIR=/ui \
+    PKG_NAME="clashutil"
 
 
 ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
@@ -109,10 +110,11 @@ RUN poetry install --no-dev
 
 FROM builder-base as builder-dev
 WORKDIR $PYSETUP_PATH
-COPY clashutil ./clashutil
+COPY "./$PKG_NAME" "./$PKG_NAME"
 RUN poetry install --no-dev
 
 # `production` image used for runtime
 FROM python-base as production
 COPY --from=builder-dev $PYSETUP_PATH $PYSETUP_PATH
-ENTRYPOINT [ "clashutil" ]
+COPY ./entrypoint.sh /entrypoint.sh
+ENTRYPOINT [ "/entrypoint.sh" ]
