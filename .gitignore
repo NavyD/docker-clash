@@ -146,3 +146,5 @@ cython_debug/
 # End of https://www.toptal.com/developers/gitignore/api/python
 
 # poetry.lock
+clash_dir/
+*.yaml

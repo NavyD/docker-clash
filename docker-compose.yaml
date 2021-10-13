@@ -12,7 +12,7 @@ services:
       -b clash
       -d /clash_dir
       -u nobody
-      -vvv
+      -t 20
 
     # 仅使用cap_add将无法代理本机docker
     # cap_add:
@@ -27,6 +27,7 @@ services:
         source: ./config.yaml
         target: /config.yaml
         read_only: true
+      - ./clash_dir:/clash_dir
     # 自定义dns 当clash作为本地上游dns时 clash启动时无法找到可用的dns
     dns:
       - 8.8.8.8
