@@ -15,7 +15,7 @@ ENV PYTHONUNBUFFERED=1 \
     \
     # poetry
     # https://python-poetry.org/docs/configuration/#using-environment-variables
-    POETRY_VERSION=1.1.11 \
+    POETRY_VERSION=1.1.12 \
     # make poetry install to this location
     POETRY_HOME="/opt/poetry" \
     # make poetry create the virtual environment in the project's root
@@ -72,7 +72,7 @@ RUN set -eux; \
     gosu --version; \
     gosu nobody true
 
-COPY --from=dreamacro/clash-premium:2021.09.15 /clash /bin/
+COPY --from=dreamacro/clash-premium:2021.11.08 /clash /usr/local/bin/
 RUN set -eux; \
     # clash cap
     setcap 'cap_net_admin,cap_net_bind_service=+ep' "$(which clash)"; \
@@ -99,7 +99,7 @@ RUN apk add --no-cache \
     libffi-dev
 
 # install poetry - respects $POETRY_VERSION & $POETRY_HOME
-RUN curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/install-poetry.py | python -
+RUN curl -sSL https://install.python-poetry.org | python3 -
 
 # copy project requirement files here to ensure they will be cached.
 WORKDIR $PYSETUP_PATH

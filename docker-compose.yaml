@@ -23,13 +23,17 @@ services:
     devices:
       - /dev/net/tun
     volumes:
-      - type: bind
-        source: ./config.yaml
-        target: /config.yaml
-        read_only: true
+      - ./config.yaml:/config.yaml
       - ./clash_dir:/clash_dir
     # 自定义dns 当clash作为本地上游dns时 clash启动时无法找到可用的dns
     dns:
       - 8.8.8.8
       - 119.29.29.29
       - 127.0.0.1
+    deploy:
+      resources:
+        limits:
+          cpus: '0.7'
+          memory: 400M
+        reservations:
+          memory: 50M
