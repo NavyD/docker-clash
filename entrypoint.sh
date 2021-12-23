@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 
 # 在非控制语句中退出status!=0时shell不会执行后续语句
 # set -e
@@ -277,8 +277,9 @@ if [ "$ENABLED" = true ]; then
     init_env
     clean
 
-    # 等待clash退出清理
-    trap clean SIGTERM
+# case "$*" in
+# *_"-D"_* | *_"--detach"_*)
+#     $PKG_NAME "$*"
 
     sudo -u "$RUN_USER" clash -d "$CLASH_DIR" &
     CLASH_PID=$!
