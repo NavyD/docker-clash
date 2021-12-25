@@ -72,18 +72,6 @@ RUN set -eux; \
     gosu --version; \
     gosu nobody true
 
-COPY --from=dreamacro/clash-premium:2021.11.08 /clash /usr/local/bin/
-RUN set -eux; \
-    # clash cap
-    setcap 'cap_net_admin,cap_net_bind_service=+ep' "$(which clash)"; \
-    # yacd ui
-    wget -O yacd.zip 'https://github.com/haishanh/yacd/archive/gh-pages.zip'; \
-    mkdir $UI_DIR; \
-    unzip yacd.zip -d $UI_DIR; \
-    mv $UI_DIR/yacd-gh-pages/* $UI_DIR; \
-    rm -rf $UI_DIR/yacd-gh-pages; \
-    rm -rf yacd.zip
-
 # `builder-base` stage is used to build deps + create our virtual environment
 FROM python-base as builder-base
 RUN apk add --no-cache \
@@ -116,5 +104,15 @@ RUN poetry install --no-dev
 # `production` image used for runtime
 FROM python-base as production
 COPY --from=builder-dev $PYSETUP_PATH $PYSETUP_PATH
+
+# clash bin
+COPY --from=dreamacro/clash-premium:2021.11.08 /clash /usr/local/bin/
+RUN set -eux; \
+    # clash cap
+    setcap 'cap_net_admin,cap_net_bind_service=+ep' "$(which clash)"; \
+    mkdir -p $UI_DIR
+# yacd fontend for clash
+COPY --from=haishanh/yacd:v0.3.4 /usr/share/nginx/html/ $UI_DIR
+
 COPY ./entrypoint.sh /entrypoint.sh
 ENTRYPOINT [ "/entrypoint.sh" ]

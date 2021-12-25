@@ -60,8 +60,9 @@ class CliProgram(object):
         self._handle_sig()
 
     def run(self, clash_bin, clash_home, config_path, clash_pid, clean, detach, user, wait_time):
-        if clash_home and (path := Path(clash_home)) and not path.exists():
-            path.mkdir(0o744, parents=True)
+        if clash_home and (path := Path(clash_home)):
+            if not path.exists():
+                path.mkdir(0o744, parents=True)
             if user:
                 chown(path, user)
 
