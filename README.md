@@ -1,6 +1,6 @@
 # clashutil
 
-一个clash透明代理工具，使用docker部署基于[clash-premium](https://github.com/Dreamacro/clash)的透明代理。支持从配置文件中读取clash工作模式做出不同配置
+一个clash透明代理工具，使用docker部署基于[clash-premium](https://github.com/Dreamacro/clash)的透明代理。支持多种clash工作模式
 
 - redir
 - fake-ip
@@ -121,6 +121,13 @@ dns:
 - 非tun模式对本机不支持udp代理，但本机docker支持udp代理
 - 仅支持linux host模式，性能与原生linux应用一致
 - 当前在ras pi4 arm64与wsl2 amd64平台测试过工作正常
+- 使用非tun模式时要求Linux支持xt_TPROXY.ko模块，不支持时请使用tun模式：
+  ```bash
+  # 查找 TPROXY 模块
+  $ find /lib/modules/$(uname -r) -type f -name 'xt_TPROXY.ko*'
+  # 正常情况下的输出
+  /lib/modules/4.16.8-1-ARCH/kernel/net/netfilter/xt_TPROXY.ko.xz
+  ```
 
 links:
 

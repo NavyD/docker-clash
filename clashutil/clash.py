@@ -253,7 +253,7 @@ iptables -t "{table}" -A "{chain}" -d 10.0.0.0/8 -j RETURN
 
     def __check_tproxy_mod(self):
         path = "/lib/modules/{}".format(
-            Path("/proc/sys/kernel/osrelease").read_text())
+            Path("/proc/sys/kernel/osrelease").read_text()).strip()
         self.log.debug(f"checking if the tproxy module exists in path {path}")
         for _, _, files in walk(path, followlinks=True):
             for name in files:
