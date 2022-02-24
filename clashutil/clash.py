@@ -103,7 +103,7 @@ iptables -t mangle -X CLASH_EXTERNAL
                     p.args, p.stderr.strip()))
 
     def config_net(self):
-        if self.config["tun"]["enable"]:
+        if self.config.get("tun", {}).get("enable", False):
             self.__config_tun()
         else:
             self.__config_redir()
