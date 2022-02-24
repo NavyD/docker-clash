@@ -31,7 +31,8 @@ ENV PYTHONUNBUFFERED=1 \
     \
     GOSU_VERSION=1.14 \
     UI_DIR=/ui \
-    PKG_NAME="clashutil"
+    PKG_NAME="clashutil" \
+    CLASH_PATH="/usr/local/bin/clash"
 
 
 ENV PATH="$POETRY_HOME/bin:$VENV_PATH/bin:$PATH"
@@ -101,18 +102,44 @@ WORKDIR $PYSETUP_PATH
 COPY "./$PKG_NAME" "./$PKG_NAME"
 RUN poetry install --no-dev
 
+FROM python-base as clash-bin
+# download clash binary
+RUN set -eux;\
+    apk add --no-cache curl;\
+    \
+    # find archtecture
+    arch=''; \
+    case "$(uname -m)" in \
+        "x86_64")     arch='amd64';;\
+        "aarch64")    arch='armv8';;\
+        *)            echo "Unable to determine system arch"; return 1;;\
+    esac;\
+    \
+    # get url of clash premium
+    url=$(curl -Ls -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/Dreamacro/clash/releases/tags/premium \
+    | grep browser_download_url \
+    | cut -d '"' -f 4 \
+    | grep "linux-$arch.*.gz"); \
+    \
+    if [ -z "$url" ];then\
+        echo "not found clash premium for url: $url"; \
+        return 1;\
+    fi;\
+    \
+    echo "downloading clash from $url"; \
+    # download clash
+    curl -sSL "$url" | gzip -d > "$CLASH_PATH";\
+    chmod +x "$CLASH_PATH"
+
 # `production` image used for runtime
 FROM python-base as production
 COPY --from=builder-dev $PYSETUP_PATH $PYSETUP_PATH
-
-# clash bin
-COPY --from=dreamacro/clash-premium:2021.11.08 /clash /usr/local/bin/
-RUN set -eux; \
-    # clash cap
-    setcap 'cap_net_admin,cap_net_bind_service=+ep' "$(which clash)"; \
-    mkdir -p $UI_DIR
+COPY --from=clash-bin $CLASH_PATH $CLASH_PATH
 # yacd fontend for clash
 COPY --from=haishanh/yacd:v0.3.4 /usr/share/nginx/html/ $UI_DIR
+
+# clash bin
+RUN set -eux; setcap 'cap_net_admin,cap_net_bind_service=+ep' "$CLASH_PATH"
 
 COPY ./entrypoint.sh /entrypoint.sh
 ENTRYPOINT [ "/entrypoint.sh" ]
