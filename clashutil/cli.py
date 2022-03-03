@@ -60,6 +60,10 @@ class CliProgram(object):
         self._handle_sig()
 
     def run(self, clash_bin, clash_home, config_path, clash_pid, clean, detach, user, wait_time):
+        if clean:
+            self.clean()
+            exit(0)
+
         if clash_home and (path := Path(clash_home)):
             if not path.exists():
                 path.mkdir(0o744, parents=True)
@@ -86,11 +90,6 @@ class CliProgram(object):
 
         print("checking the clash process")
         self.clash = new_clash_retry(config, clash_pid, wait_time)
-
-        if clean:
-            self.clean()
-            if not clash_pid:
-                return
 
         print(f"configuring for clash pid {clash_pid}")
         # config ip for clash
