@@ -102,39 +102,10 @@ WORKDIR $PYSETUP_PATH
 COPY "./$PKG_NAME" "./$PKG_NAME"
 RUN poetry install --no-dev
 
-FROM python-base as clash-bin
-# download clash binary
-RUN set -eux;\
-    apk add --no-cache curl;\
-    \
-    # find archtecture
-    arch=''; \
-    case "$(uname -m)" in \
-        "x86_64")     arch='amd64';;\
-        "aarch64")    arch='armv8';;\
-        *)            echo "Unable to determine system arch"; return 1;;\
-    esac;\
-    \
-    # get url of clash premium
-    url=$(curl -Ls -H "Accept: application/vnd.github.v3+json" https://api.github.com/repos/Dreamacro/clash/releases/tags/premium \
-    | grep browser_download_url \
-    | cut -d '"' -f 4 \
-    | grep "linux-$arch.*.gz"); \
-    \
-    if [ -z "$url" ];then\
-        echo "not found clash premium for url: $url"; \
-        return 1;\
-    fi;\
-    \
-    echo "downloading clash from $url"; \
-    # download clash
-    curl -sSL "$url" | gzip -d > "$CLASH_PATH";\
-    chmod +x "$CLASH_PATH"
-
 # `production` image used for runtime
 FROM python-base as production
 COPY --from=builder-dev $PYSETUP_PATH $PYSETUP_PATH
-COPY --from=clash-bin $CLASH_PATH $CLASH_PATH
+COPY --from=dreamacro/clash-premium:2022.03.21 "/clash" $CLASH_PATH
 # yacd fontend for clash
 COPY --from=haishanh/yacd:v0.3.4 /usr/share/nginx/html/ $UI_DIR
 
