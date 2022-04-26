@@ -37,3 +37,10 @@ services:
           memory: 400M
         reservations:
           memory: 50M
+
+  subconverter: # https://github.com/tindy2013/subconverter
+    image: tindy2013/subconverter:0.7.2
+    ports: 
+      - "25500:25500"
+    restart: always
+    container_name: subconverter
