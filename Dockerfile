@@ -105,7 +105,7 @@ RUN poetry install --no-dev
 # `production` image used for runtime
 FROM python-base as production
 COPY --from=builder-dev $PYSETUP_PATH $PYSETUP_PATH
-COPY --from=dreamacro/clash-premium:2022.03.21 "/clash" $CLASH_PATH
+COPY --from=dreamacro/clash-premium:2022.04.17 "/clash" $CLASH_PATH
 # yacd fontend for clash
 COPY --from=haishanh/yacd:v0.3.4 /usr/share/nginx/html/ $UI_DIR
 
